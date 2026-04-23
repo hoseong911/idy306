@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>306 Class Dashboard</title>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    <title>INTO THE 306 WORLD</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
         import { getDatabase, ref, set, push, onValue, update, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
@@ -22,77 +22,124 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 환경 설정 ---
+        // --- 초기 설정 ---
         const startDate = new Date("2026-03-03");
         const endDate = new Date("2027-01-08");
+        const ADMIN_PW = "1234";
 
-        // --- 내비게이션 & 탭 로직 ---
+        // 질문 자동 생성을 위한 뱅크
+        const qBank = [
+            "오늘 나를 가장 웃게 만든 친구와 그 이유는?",
+            "오늘 수업 시간 중 가장 기억에 남는 단어 하나는?",
+            "점심 메뉴 중 가장 맛있었던 것과 내일 기대되는 메뉴는?",
+            "오늘의 나에게 해주고 싶은 칭찬 한마디는?",
+            "방과 후에 가장 먼저 하고 싶은 일은?",
+            "우리 반에서 오늘 가장 열심히 산 것 같은 친구는?",
+            "오늘 느낀 감정을 날씨로 표현한다면?",
+            "최근에 가장 즐겨 듣는 노래 가사 한 줄은?",
+            "내일의 나에게 미리 보내는 응원 메시지는?"
+        ];
+
+        // 사유별 점수 맵 (선생님 입맛에 맞춰 수정 가능)
+        const reasonScoreMap = {
+            "칭찬 감옥 제보": 2,
+            "칭찬 주인공 선정": 5,
+            "오늘 하루 기록": 1,
+            "1인 1역 완수": 3,
+            "수업 참여 우수": 2,
+            "청소 구역 완벽": 5,
+            "기타(직접 입력)": 0
+        };
+
+        // --- 내비게이션 & 관리자 보안 ---
         window.showSection = (id) => {
+            if (id === 'admin') {
+                const pw = prompt("관리자 비밀번호를 입력하세요.");
+                if (pw !== ADMIN_PW) {
+                    alert("비밀번호가 틀렸습니다.");
+                    return;
+                }
+            }
             document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('nav > button').forEach(b => b.classList.remove('active'));
             document.getElementById(id).classList.add('active');
             document.getElementById('btn-' + id).classList.add('active');
         };
 
-        window.showSubTab = (sectionId, tabId) => {
+        window.showSubTab = (btn, sectionId, tabId) => {
             const section = document.getElementById(sectionId);
             section.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             section.querySelectorAll('.sub-nav button').forEach(b => b.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
-            event.target.classList.add('active');
+            btn.classList.add('active');
         };
 
-        // --- 데이터 실시간 동기화 ---
+        // --- 데이터 수신 ---
         onValue(ref(db, 'class306'), (snapshot) => {
             const data = snapshot.val() || {};
             renderHome(data.calendar || {});
             renderMileage(data.mileage || {});
             renderPraise(data.praise || {});
             renderToday(data.impression || {});
-            renderAdmin(data);
-            document.getElementById('daily-q-text').innerText = data.config?.question || "오늘 하루, 당신을 미소 짓게 한 일은?";
+            renderAdminTools(data);
+            
+            const todayStr = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+            document.getElementById('display-date').innerText = todayStr;
+            document.getElementById('daily-q-text').innerText = data.config?.question || "오늘 하루 어땠나요?";
         });
 
-        // --- 1. 홈 & 디데이 ---
+        // --- 1. 홈 렌더링 ---
         function renderHome(calObj) {
             const today = new Date();
             const diffStart = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
             const diffEnd = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-            document.getElementById('d-day-start').innerText = diffStart;
-            document.getElementById('d-day-end').innerText = diffEnd;
+            document.getElementById('d-day-start').innerText = diffStart > 0 ? diffStart : 0;
+            document.getElementById('d-day-end').innerText = diffEnd > 0 ? diffEnd : 0;
 
             const container = document.getElementById('cal-list');
             container.innerHTML = '';
-            Object.entries(calObj).sort((a,b) => new Date(a[1].date) - new Date(b[1].date)).forEach(([id, c]) => {
-                container.innerHTML += `<div class="glass-card"><span>${c.date}</span> <strong>${c.title}</strong></div>`;
+            const threeWeeks = new Date(); threeWeeks.setDate(today.getDate() + 21);
+
+            const sorted = Object.entries(calObj)
+                .filter(([id, c]) => {
+                    const d = new Date(c.date);
+                    return d >= today && d <= threeWeeks;
+                })
+                .sort((a,b) => new Date(a[1].date) - new Date(b[1].date));
+
+            if(sorted.length === 0) container.innerHTML = "<p class='empty-msg'>3주 내 일정이 없습니다.</p>";
+            sorted.forEach(([id, c]) => {
+                container.innerHTML += `<div class="glass-card cal-item"><span>${c.date}</span> <strong>${c.title}</strong></div>`;
             });
         }
 
-        // --- 2. 마일리지 ---
+        // --- 2. 마일리지 렌더링 ---
         function renderMileage(mileageObj) {
             const tbody = document.getElementById('mileage-rank-list');
             tbody.innerHTML = '';
-            const sorted = Object.entries(mileageObj).sort((a, b) => b[1] - a[1]);
-            sorted.forEach(([name, score], index) => {
-                tbody.innerHTML += `<div class="rank-item"><span>${index+1}위. ${name}</span> <strong>${score} P</strong></div>`;
+            Object.entries(mileageObj).sort((a,b) => b[1]-a[1]).forEach(([name, score], idx) => {
+                tbody.innerHTML += `<div class="list-item"><span>${idx+1}위. ${name}</span> <strong>${score} P</strong></div>`;
             });
         }
 
-        // --- 3. 칭찬 감옥 ---
+        // --- 3. 칭찬 감옥 제보 ---
         window.submitPraise = () => {
             const from = document.getElementById('p-from').value;
             const to = document.getElementById('p-to').value;
             const content = document.getElementById('p-content').value;
-            if(!from || !to || !content) return alert("내용을 입력해주세요.");
-            push(ref(db, 'class306/praise'), { from, to, content, approved: false, date: new Date().toLocaleDateString() });
-            alert("제보 완료! 선생님 승인 후 공개됩니다.");
+            if(!from || !to || !content) return alert("내용을 채워주세요.");
+            push(ref(db, 'class306/praise'), { 
+                from, to, content, approved: false, 
+                time: new Date().toLocaleString() 
+            });
+            alert("선생님께 전달되었습니다!");
         };
 
         function renderPraise(praiseObj) {
             const container = document.getElementById('praise-view-list');
             container.innerHTML = '';
             Object.values(praiseObj).filter(p => p.approved).reverse().forEach(p => {
-                container.innerHTML += `<div class="glass-card praise"><b>${p.to}</b> 친구를 칭찬합니다!<br><small>${p.content}</small><div class='from'>- 제보자: ${p.from}</div></div>`;
+                container.innerHTML += `<div class="glass-card praise-card"><b>${p.to}</b> 친구를 칭찬합니다!<br><p>${p.content}</p><small>- 제보자: ${p.from}</small></div>`;
             });
         }
 
@@ -101,9 +148,9 @@
             const name = document.getElementById('t-name').value;
             const content = document.getElementById('t-content').value;
             const q = document.getElementById('daily-q-text').innerText;
-            if(!name || !content) return alert("이름과 내용을 입력하세요.");
+            if(!name || !content) return alert("이름과 답변을 입력하세요.");
             push(ref(db, 'class306/impression'), { name, content, question: q, date: new Date().toLocaleDateString() });
-            alert("기록 완료!");
+            alert("오늘의 인상이 기록되었습니다.");
         };
 
         function renderToday(impObj) {
@@ -115,28 +162,86 @@
                 grouped[i.date].a.push(i);
             });
             Object.entries(grouped).reverse().forEach(([date, data]) => {
-                let html = `<div class='date-group'><h4>📅 ${date}</h4><p class='q-title'>질문: ${data.q}</p>`;
+                let html = `<div class='date-group'><h4>📅 ${date}</h4><p class='q-box'>Q. ${data.q}</p>`;
                 data.a.forEach(ans => { html += `<div class='ans-item'><b>${ans.name}</b>: ${ans.content}</div>`; });
-                html += `</div>`;
-                container.innerHTML += html;
+                container.innerHTML += html + `</div>`;
             });
         }
 
-        // --- 5. 어드민 (선생님용) ---
-        function renderAdmin(data) {
+        // --- 5. 어드민 통합 툴 ---
+        function renderAdminTools(data) {
+            // 학생 드롭다운 & 목록
+            const stSelect = document.getElementById('adm-m-st-select');
+            const stList = document.getElementById('adm-bulk-st-list');
+            stSelect.innerHTML = '<option value="">선택 안 함</option>';
+            stList.innerHTML = '';
+            const students = Object.keys(data.students || {}).sort();
+            students.forEach(name => {
+                stSelect.innerHTML += `<option value="${name}">${name}</option>`;
+                stList.innerHTML += `<label><input type="checkbox" class="st-cb" value="${name}"> ${name}</label> `;
+            });
+
+            // 칭찬 승인 대기 (시간 표시)
             const pending = document.getElementById('adm-praise-pending');
             pending.innerHTML = '';
-            const praiseObj = data.praise || {};
-            Object.entries(praiseObj).forEach(([id, p]) => {
+            Object.entries(data.praise || {}).forEach(([id, p]) => {
                 if(!p.approved) {
-                    pending.innerHTML += `<div class='glass-card'>[${p.from}->${p.to}] ${p.content} <button onclick="approvePraise('${id}','${p.from}','${p.to}')">승인</button></div>`;
+                    pending.innerHTML += `
+                    <div class='list-item' style='flex-direction:column; align-items:flex-start;'>
+                        <div style='font-size:0.8rem; color:#999;'>🕒 ${p.time}</div>
+                        <div><b>[${p.from}→${p.to}]</b> ${p.content}</div>
+                        <button onclick="approvePraise('${id}','${p.from}','${p.to}')" style="margin-top:5px; background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:5px;">승인(+2/+5)</button>
+                    </div>`;
                 }
             });
         }
 
+        // --- 관리자 제어 함수들 ---
+        window.updateAdminScore = () => {
+            const reason = document.getElementById('adm-m-reason').value;
+            const scoreInput = document.getElementById('adm-m-score');
+            scoreInput.value = reasonScoreMap[reason] || 0;
+        };
+
+        window.processMileage = () => {
+            const selectVal = document.getElementById('adm-m-st-select').value;
+            const inputVal = document.getElementById('adm-m-st-input').value;
+            const score = parseInt(document.getElementById('adm-m-score').value);
+            
+            let targets = [];
+            if(selectVal) targets.push(selectVal);
+            if(inputVal) targets = targets.concat(inputVal.split(',').map(s => s.trim()).filter(s => s));
+
+            if(targets.length === 0 || isNaN(score)) return alert("학생과 점수를 확인하세요.");
+
+            targets.forEach(name => {
+                const refM = ref(db, `class306/mileage/${name}`);
+                onValue(refM, s => set(refM, (s.val()||0)+score), {onlyOnce:true});
+            });
+            alert(`${targets.join(', ')} 적립 완료!`);
+        };
+
+        window.autoGenQ = () => {
+            const randomQ = qBank[Math.floor(Math.random() * qBank.length)];
+            document.getElementById('adm-q-input').value = randomQ;
+        };
+
+        window.updateQ = () => {
+            const q = document.getElementById('adm-q-input').value;
+            if(q) set(ref(db, 'class306/config/question'), q);
+        };
+
+        window.addBulkCal = () => {
+            const lines = document.getElementById('adm-cal-bulk').value.split('\n');
+            lines.forEach(line => {
+                const [date, title] = line.split(':').map(s => s.trim());
+                if(date && title) push(ref(db, 'class306/calendar'), { date, title });
+            });
+            alert("일정 일괄 등록 완료!");
+        };
+
         window.approvePraise = (id, from, to) => {
             update(ref(db, `class306/praise/${id}`), { approved: true });
-            // 자동 점수: 제보자 2, 주인공 5
             const mRef = ref(db, 'class306/mileage');
             onValue(mRef, snap => {
                 const cur = snap.val() || {};
@@ -144,121 +249,64 @@
             }, {onlyOnce:true});
         };
 
-        window.addCalendar = () => {
-            const title = document.getElementById('adm-c-t').value;
-            const date = document.getElementById('adm-c-d').value;
-            push(ref(db, 'class306/calendar'), { title, date });
-        };
-
-        window.updateQuestion = () => {
-            const q = document.getElementById('adm-q').value;
-            set(ref(db, 'class306/config/question'), q);
-        };
-
-        window.addStudentMileage = () => {
-            const name = document.getElementById('adm-m-n').value;
-            const score = parseInt(document.getElementById('adm-m-s').value);
-            const mRef = ref(db, `class306/mileage/${name}`);
-            onValue(mRef, s => set(mRef, (s.val()||0)+score), {onlyOnce:true});
-        };
+        window.addSt = () => {
+            const n = document.getElementById('adm-st-n').value;
+            if(n) set(ref(db, `class306/students/${n}`), true);
+            if(n) set(ref(db, `class306/mileage/${n}`), 0);
+        }
 
     </script>
     <style>
         :root {
-            --mint: #b2f2bb;
-            --pink: #ffc9c9;
-            --main-grad: linear-gradient(135deg, #e6fbfe 0%, #edeffd 100%);
-            --point-grad: linear-gradient(90deg, #98FFD9 0%, #FFC2D1 100%);
+            --mint: #b2f2bb; --pink: #ffc9c9;
+            --accent-grad: linear-gradient(90deg, #37ecba 0%, #72afd3 100%);
+            --header-grad: linear-gradient(135deg, #FF6B6B 0%, #FFD93D 100%);
+        }
+        body { font-family: 'Pretendard', sans-serif; background: #fdfdfd; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        
+        header { padding: 60px 0 40px; text-align: center; width: 100%; }
+        h1 { 
+            font-weight: 900; font-size: 3rem; margin: 0;
+            background: var(--header-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.1));
+            letter-spacing: -1px;
         }
 
-        body {
-            font-family: 'Pretendard', sans-serif;
-            background: var(--main-grad);
-            margin: 0; padding: 0;
-            display: flex; flex-direction: column; align-items: center;
-            min-height: 100vh; color: #444;
-        }
-
-        header {
-            width: 100%; padding: 40px 0;
-            text-align: center;
-        }
-
-        h1 {
-            font-weight: 800; font-size: 2.2rem; margin: 0;
-            background: var(--point-grad);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        nav {
-            display: flex; gap: 10px; margin-bottom: 30px;
-        }
-
+        nav { display: flex; gap: 10px; margin-bottom: 40px; }
         nav button {
-            padding: 10px 20px; border: none; border-radius: 20px;
-            background: rgba(255, 255, 255, 0.5);
-            backdrop-filter: blur(10px); cursor: pointer;
-            font-weight: 600; transition: 0.3s;
+            padding: 12px 24px; border: none; border-radius: 25px; background: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); cursor: pointer; font-weight: 700; color: #888;
         }
+        nav button.active { background: #333; color: white; }
 
-        nav button.active {
-            background: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            color: #ff85a1;
-        }
-
-        .content-section {
-            display: none; width: 90%; max-width: 600px;
-            animation: fadeIn 0.5s ease;
-        }
-
+        .content-section { display: none; width: 90%; max-width: 700px; animation: fadeIn 0.4s ease; }
         .content-section.active { display: block; }
 
-        .glass-card {
-            background: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px;
-            padding: 25px; margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.07);
-        }
-
-        h2 { text-align: center; font-size: 1.5rem; margin-bottom: 20px; }
-
-        /* 서브 탭 스타일 */
-        .sub-nav { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; }
-        .sub-nav button {
-            background: none; border: none; font-size: 1rem; color: #999;
-            cursor: pointer; padding-bottom: 5px; border-bottom: 2px solid transparent;
-        }
-        .sub-nav button.active { color: #333; border-bottom: 2px solid #98FFD9; font-weight: bold; }
-
+        .sub-nav { display: flex; justify-content: center; gap: 15px; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .sub-nav button { background: none; border: none; font-size: 1.1rem; color: #ccc; cursor: pointer; font-weight: 700; }
+        .sub-nav button.active { color: #333; border-bottom: 3px solid #37ecba; }
+        
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
-        /* 디데이 */
-        .d-day-wrap { display: flex; justify-content: space-around; margin-bottom: 30px; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.5); border-radius: 30px;
+            padding: 35px; box-shadow: 0 15px 35px rgba(0,0,0,0.05); margin-bottom: 20px;
+        }
+
+        .d-day-area { display: flex; justify-content: space-around; margin-bottom: 40px; }
         .d-day-box { text-align: center; }
-        .d-day-box div { font-size: 0.9rem; color: #888; }
-        .d-day-box strong { font-size: 1.8rem; color: #ff85a1; }
+        .d-day-box b { font-size: 2.2rem; color: #FF6B6B; display: block; }
+        
+        input, textarea, select { width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 15px; border: 1px solid #eee; font-family: inherit; font-size: 1rem; box-sizing: border-box; }
+        .btn-main { width: 100%; padding: 18px; border: none; border-radius: 15px; background: var(--header-grad); color: white; font-weight: 800; cursor: pointer; font-size: 1.1rem; }
 
-        /* 입력창 스타일 */
-        input, textarea {
-            width: 100%; padding: 15px; margin-bottom: 15px;
-            border-radius: 12px; border: 1px solid #eee;
-            box-sizing: border-box; font-family: inherit;
-        }
-        .btn-main {
-            width: 100%; padding: 15px; border: none; border-radius: 12px;
-            background: var(--point-grad); color: white; font-weight: bold;
-            cursor: pointer; font-size: 1rem;
-        }
-
-        /* 리스트 아이템 */
-        .rank-item { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; }
-        .ans-item { padding: 10px; background: rgba(255,255,255,0.4); border-radius: 10px; margin-top: 5px; }
-        .date-group { margin-bottom: 30px; }
-        .q-title { font-weight: bold; color: #4a90e2; }
+        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; border-bottom: 1px solid #f7f7f7; }
+        .q-box { padding: 20px; background: #fff9e6; border-radius: 20px; border-left: 5px solid #FFD93D; margin-bottom: 20px; }
+        .ans-item { padding: 12px; border-bottom: 1px solid #f9f9f9; }
+        .admin-box { background: #f8f9fa; padding: 25px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #eee; }
+        .admin-box h4 { margin-top: 0; color: #555; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -266,105 +314,146 @@
 <body>
 
 <header>
-    <h1>306 CLASS DASHBOARD</h1>
+    <h1>INTO THE 306 WORLD</h1>
 </header>
 
 <nav>
-    <button onclick="showSection('home')" id="btn-home" class="active">🏠 홈</button>
-    <button onclick="showSection('mileage')" id="btn-mileage">🏆 마일리지</button>
-    <button onclick="showSection('praise')" id="btn-praise">🔒 칭찬감옥</button>
-    <button onclick="showSection('today')" id="btn-today">📝 오늘 하루</button>
-    <button onclick="showSection('admin')" id="btn-admin" style="color:#ff85a1">⚙️</button>
+    <button onclick="showSection('home')" id="btn-home" class="active">HOME</button>
+    <button onclick="showSection('mileage')" id="btn-mileage">MILEAGE</button>
+    <button onclick="showSection('praise')" id="btn-praise">PRAISE</button>
+    <button onclick="showSection('today')" id="btn-today">TODAY</button>
+    <button onclick="showSection('admin')" id="btn-admin" style="color:#FF6B6B">ADMIN</button>
 </nav>
 
 <section id="home" class="content-section active">
     <div class="glass-card">
-        <div class="d-day-wrap">
-            <div class="d-day-box"><div>함께한 지</div><strong id="d-day-start">0</strong>일</div>
-            <div class="d-day-box"><div>졸업까지</div><strong id="d-day-end">0</strong>일</div>
+        <div class="d-day-area">
+            <div class="d-day-box"><span>우리가 만난 지</span><b><span id="d-day-start">0</span>일</b></div>
+            <div class="d-day-box"><span>졸업까지</span><b><span id="d-day-end">0</span>일</b></div>
         </div>
-        <h2>306 캘린더</h2>
+        <h2 style="text-align:center;">306 CALENDAR</h2>
         <div id="cal-list"></div>
     </div>
 </section>
 
 <section id="mileage" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab('mileage','m-method')">적립 방법</button>
-        <button onclick="showSubTab('mileage','m-rank')">실시간 랭킹</button>
+        <button class="active" onclick="showSubTab(this,'mileage','m-view')">실시간 랭킹</button>
+        <button onclick="showSubTab(this,'mileage','m-guide')">적립 가이드</button>
     </div>
-    <div id="m-method" class="tab-content active">
+    <div id="m-view" class="tab-content active">
         <div class="glass-card">
-            <h2>마일리지 적립 가이드</h2>
-            <p style="text-align: center; color: #888;">(여기에 적립 방법을 입력하세요. 어드민에서 일괄 적립됩니다.)</p>
+            <h2 style="text-align:center;">명예의 전당</h2>
+            <div id="mileage-rank-list"></div>
         </div>
     </div>
-    <div id="m-rank" class="tab-content">
+    <div id="m-guide" class="tab-content">
         <div class="glass-card">
-            <h2>306 명예의 전당</h2>
-            <div id="mileage-rank-list"></div>
+            <h2 style="text-align:center;">이렇게 모아요!</h2>
+            <p style="text-align:center; color:#888; line-height:2;">
+                칭찬 제보: +2점 / 칭찬 주인공: +5점<br>
+                오늘 하루 기록: +1점 / 1인 1역 완수: +3점<br>
+                그 외 선생님의 깜짝 보너스 마일리지!
+            </p>
         </div>
     </div>
 </section>
 
 <section id="praise" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab('praise','p-send')">제보하기</button>
-        <button onclick="showSubTab('praise','p-view')">모아보기</button>
+        <button class="active" onclick="showSubTab(this,'praise','p-form')">제보하기</button>
+        <button onclick="showSubTab(this,'praise','p-list')">모아보기</button>
     </div>
-    <div id="p-send" class="tab-content active">
+    <div id="p-form" class="tab-content active">
         <div class="glass-card">
-            <h2>칭찬 제보</h2>
+            <h2 style="text-align:center;">친구 칭찬 감옥에 가두기</h2>
             <input type="text" id="p-from" placeholder="제보자 이름">
-            <input type="text" id="p-to" placeholder="칭찬 주인공 이름">
-            <textarea id="p-content" placeholder="친구의 멋진 점을 적어주세요."></textarea>
-            <button class="btn-main" onclick="submitPraise()">제보 완료</button>
+            <input type="text" id="p-to" placeholder="칭찬할 친구 이름">
+            <textarea id="p-content" rows="4" placeholder="친구의 선행을 구체적으로 적어주세요."></textarea>
+            <button class="btn-main" onclick="submitPraise()">전송하기</button>
         </div>
     </div>
-    <div id="p-view" class="tab-content">
+    <div id="p-list" class="tab-content">
         <div id="praise-view-list"></div>
     </div>
 </section>
 
 <section id="today" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab('today','t-write')">오늘의 질문</button>
-        <button onclick="showSubTab('today','t-view')">모아보기</button>
+        <button class="active" onclick="showSubTab(this,'today','t-form')">오늘의 질문</button>
+        <button onclick="showSubTab(this,'today','t-list')">모아보기</button>
     </div>
-    <div id="t-write" class="tab-content active">
+    <div id="t-form" class="tab-content active">
         <div class="glass-card">
-            <h2 id="daily-q-text">질문을 불러오는 중...</h2>
-            <input type="text" id="t-name" placeholder="본인 이름">
-            <textarea id="t-content" placeholder="답변을 적어주세요."></textarea>
+            <div style="text-align:center; margin-bottom:10px; color:#999;" id="display-date"></div>
+            <div class="q-box">
+                <h3 id="daily-q-text" style="margin:0; text-align:center;">로딩 중...</h3>
+            </div>
+            <input type="text" id="t-name" placeholder="실명 입력">
+            <textarea id="t-content" rows="4" placeholder="당신의 답변을 들려주세요."></textarea>
             <button class="btn-main" onclick="submitToday()">기록하기</button>
         </div>
     </div>
-    <div id="t-view" class="tab-content">
+    <div id="t-list" class="tab-content">
         <div id="today-view-list"></div>
     </div>
 </section>
 
 <section id="admin" class="content-section">
-    <div class="glass-card">
-        <h2>선생님 관리 도구</h2>
-        <div class="admin-box">
-            <h4>마일리지 일괄/개별 적립</h4>
-            <input type="text" id="adm-m-n" placeholder="학생 이름">
-            <input type="number" id="adm-m-s" placeholder="점수 (예: 10)">
-            <button onclick="addStudentMileage()">적립</button>
+    <div class="sub-nav">
+        <button class="active" onclick="showSubTab(this,'admin','adm-home')">홈 관리</button>
+        <button onclick="showSubTab(this,'admin','adm-mileage')">마일리지</button>
+        <button onclick="showSubTab(this,'admin','adm-praise')">칭찬 승인</button>
+        <button onclick="showSubTab(this,'admin','adm-today')">오늘 하루</button>
+    </div>
+
+    <div id="adm-home" class="tab-content active">
+        <div class="glass-card">
+            <div class="admin-box">
+                <h4>학생 추가</h4>
+                <input type="text" id="adm-st-n" placeholder="이름">
+                <button onclick="addSt()">등록</button>
+            </div>
+            <div class="admin-box">
+                <h4>일정 일괄 추가</h4>
+                <textarea id="adm-cal-bulk" rows="5" placeholder="2026-05-01: 현장체험학습 (줄바꿈으로 구분)"></textarea>
+                <button onclick="addBulkCal()">일괄 등록</button>
+            </div>
         </div>
-        <hr>
-        <h4>칭찬 승인 대기</h4>
-        <div id="adm-praise-pending"></div>
-        <hr>
-        <h4>오늘의 질문 변경</h4>
-        <input type="text" id="adm-q" placeholder="새로운 질문 입력">
-        <button onclick="updateQuestion()">변경</button>
-        <hr>
-        <h4>일정 추가</h4>
-        <input type="text" id="adm-c-t" placeholder="행사명">
-        <input type="date" id="adm-c-d">
-        <button onclick="addCalendar()">추가</button>
+    </div>
+
+    <div id="adm-mileage" class="tab-content">
+        <div class="glass-card">
+            <h4>마일리지 적립 (개별/일괄)</h4>
+            <select id="adm-m-st-select"><option>로딩 중...</option></select>
+            <input type="text" id="adm-m-st-input" placeholder="여러 명일 경우 쉼표(,)로 구분">
+            <select id="adm-m-reason" onchange="updateAdminScore()">
+                <option value="기타(직접 입력)">사유 선택</option>
+                <option value="칭찬 감옥 제보">칭찬 감옥 제보</option>
+                <option value="칭찬 주인공 선정">칭찬 주인공 선정</option>
+                <option value="오늘 하루 기록">오늘 하루 기록</option>
+                <option value="1인 1역 완수">1인 1역 완수</option>
+                <option value="수업 참여 우수">수업 참여 우수</option>
+            </select>
+            <input type="number" id="adm-m-score" placeholder="적립 점수">
+            <button class="btn-main" onclick="processMileage()">적립 버튼 누르기</button>
+        </div>
+    </div>
+
+    <div id="adm-praise" class="tab-content">
+        <div class="glass-card">
+            <h4>승인 대기 중인 칭찬</h4>
+            <div id="adm-praise-pending"></div>
+        </div>
+    </div>
+
+    <div id="adm-today" class="tab-content">
+        <div class="glass-card">
+            <h4>오늘의 질문 설정</h4>
+            <input type="text" id="adm-q-input" placeholder="직접 입력 또는 자동 생성">
+            <button onclick="autoGenQ()" style="margin-bottom:10px;">✨ 질문 자동 생성</button>
+            <button onclick="updateQ()" class="btn-main">질문 변경 확정</button>
+        </div>
     </div>
 </section>
 
