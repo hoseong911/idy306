@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>306 실시간 대시보드</title>
+    <title>306 Class Dashboard</title>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
         import { getDatabase, ref, set, push, onValue, update, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
-        // --- 선생님의 Firebase 설정 적용 ---
         const firebaseConfig = {
             apiKey: "AIzaSyDAc5S87JK-LtXzk5-iTR9rt7RnHWnUXTQ",
             authDomain: "ho0911seong-56638.firebaseapp.com",
@@ -22,11 +22,11 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 기본 설정값 ---
-        const startDate = new Date("2026-03-02"); // 개학일
-        const endDate = new Date("2027-01-06");   // 졸업일(예정)
+        // --- 환경 설정 ---
+        const startDate = new Date("2026-03-03");
+        const endDate = new Date("2027-01-08");
 
-        // 탭 전환 함수
+        // --- 내비게이션 & 탭 로직 ---
         window.showSection = (id) => {
             document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -34,232 +34,337 @@
             document.getElementById('btn-' + id).classList.add('active');
         };
 
-        // 데이터 실시간 수신 및 렌더링
+        window.showSubTab = (sectionId, tabId) => {
+            const section = document.getElementById(sectionId);
+            section.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            section.querySelectorAll('.sub-nav button').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        };
+
+        // --- 데이터 실시간 동기화 ---
         onValue(ref(db, 'class306'), (snapshot) => {
             const data = snapshot.val() || {};
-            renderAll(data);
-        });
-
-        function renderAll(data) {
-            updateDDay();
+            renderHome(data.calendar || {});
             renderMileage(data.mileage || {});
             renderPraise(data.praise || {});
-            renderCalendar(data.calendar || {});
-            renderImpression(data.impression || {});
-            renderAdminPraise(data.praise || {});
-            document.getElementById('daily-question').innerText = data.config?.question || "오늘 가장 기억에 남는 순간은?";
-        }
+            renderToday(data.impression || {});
+            renderAdmin(data);
+            document.getElementById('daily-q-text').innerText = data.config?.question || "오늘 하루, 당신을 미소 짓게 한 일은?";
+        });
 
-        // --- 기능별 로직 ---
-        function updateDDay() {
+        // --- 1. 홈 & 디데이 ---
+        function renderHome(calObj) {
             const today = new Date();
             const diffStart = Math.floor((today - startDate) / (1000 * 60 * 60 * 24)) + 1;
             const diffEnd = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-            document.getElementById('days-since').innerText = diffStart > 0 ? diffStart : 0;
-            document.getElementById('days-until').innerText = diffEnd > 0 ? diffEnd : 0;
-        }
+            document.getElementById('d-day-start').innerText = diffStart;
+            document.getElementById('d-day-end').innerText = diffEnd;
 
-        function renderCalendar(calObj) {
-            const container = document.getElementById('calendar-list');
+            const container = document.getElementById('cal-list');
             container.innerHTML = '';
-            const sorted = Object.entries(calObj).sort((a,b) => new Date(a[1].date) - new Date(b[1].date));
-            sorted.forEach(([id, c]) => {
-                container.innerHTML += `<div class="card">📅 ${c.date} - ${c.title}</div>`;
+            Object.entries(calObj).sort((a,b) => new Date(a[1].date) - new Date(b[1].date)).forEach(([id, c]) => {
+                container.innerHTML += `<div class="glass-card"><span>${c.date}</span> <strong>${c.title}</strong></div>`;
             });
         }
 
-        window.addCalendar = () => {
-            const title = document.getElementById('adm-cal-title').value;
-            const date = document.getElementById('adm-cal-date').value;
-            if(!title || !date) return;
-            push(ref(db, 'class306/calendar'), { title, date });
-            alert("일정이 추가되었습니다.");
-        };
-
+        // --- 2. 마일리지 ---
         function renderMileage(mileageObj) {
-            const tbody = document.getElementById('mileage-tbody');
+            const tbody = document.getElementById('mileage-rank-list');
             tbody.innerHTML = '';
             const sorted = Object.entries(mileageObj).sort((a, b) => b[1] - a[1]);
             sorted.forEach(([name, score], index) => {
-                tbody.innerHTML += `<tr><td>${index + 1}</td><td>${name}</td><td>${score}</td></tr>`;
+                tbody.innerHTML += `<div class="rank-item"><span>${index+1}위. ${name}</span> <strong>${score} P</strong></div>`;
             });
         }
 
-        window.addMileage = () => {
-            const name = document.getElementById('adm-name').value;
-            const score = parseInt(document.getElementById('adm-score').value);
-            if(!name || isNaN(score)) return alert("이름과 점수를 확인하세요.");
-            const scoreRef = ref(db, `class306/mileage/${name}`);
-            onValue(scoreRef, (snap) => {
-                const current = snap.val() || 0;
-                set(scoreRef, current + score);
-            }, { onlyOnce: true });
-            alert(`${name} 학생에게 ${score}점이 부여되었습니다.`);
-        };
-
+        // --- 3. 칭찬 감옥 ---
         window.submitPraise = () => {
-            const from = document.getElementById('praise-from').value;
-            const to = document.getElementById('praise-to').value;
-            const content = document.getElementById('praise-content').value;
-            if(!from || !to || !content) return alert("빈칸을 채워주세요.");
-            push(ref(db, 'class306/praise'), { from, to, content, approved: false });
-            alert("제보되었습니다. 선생님 승인 후 게시됩니다!");
+            const from = document.getElementById('p-from').value;
+            const to = document.getElementById('p-to').value;
+            const content = document.getElementById('p-content').value;
+            if(!from || !to || !content) return alert("내용을 입력해주세요.");
+            push(ref(db, 'class306/praise'), { from, to, content, approved: false, date: new Date().toLocaleDateString() });
+            alert("제보 완료! 선생님 승인 후 공개됩니다.");
         };
 
         function renderPraise(praiseObj) {
-            const container = document.getElementById('praise-list');
+            const container = document.getElementById('praise-view-list');
             container.innerHTML = '';
-            Object.values(praiseObj).filter(p => p.approved).forEach(p => {
-                container.innerHTML += `<div class="card"><b>${p.to}</b> 친구를 칭찬합니다! (제보: ${p.from})<br>${p.content}</div>`;
+            Object.values(praiseObj).filter(p => p.approved).reverse().forEach(p => {
+                container.innerHTML += `<div class="glass-card praise"><b>${p.to}</b> 친구를 칭찬합니다!<br><small>${p.content}</small><div class='from'>- 제보자: ${p.from}</div></div>`;
             });
         }
 
-        function renderAdminPraise(praiseObj) {
-            const container = document.getElementById('admin-praise-pending');
+        // --- 4. 오늘 하루 ---
+        window.submitToday = () => {
+            const name = document.getElementById('t-name').value;
+            const content = document.getElementById('t-content').value;
+            const q = document.getElementById('daily-q-text').innerText;
+            if(!name || !content) return alert("이름과 내용을 입력하세요.");
+            push(ref(db, 'class306/impression'), { name, content, question: q, date: new Date().toLocaleDateString() });
+            alert("기록 완료!");
+        };
+
+        function renderToday(impObj) {
+            const container = document.getElementById('today-view-list');
             container.innerHTML = '';
+            const grouped = {};
+            Object.values(impObj).forEach(i => {
+                if(!grouped[i.date]) grouped[i.date] = { q: i.question, a: [] };
+                grouped[i.date].a.push(i);
+            });
+            Object.entries(grouped).reverse().forEach(([date, data]) => {
+                let html = `<div class='date-group'><h4>📅 ${date}</h4><p class='q-title'>질문: ${data.q}</p>`;
+                data.a.forEach(ans => { html += `<div class='ans-item'><b>${ans.name}</b>: ${ans.content}</div>`; });
+                html += `</div>`;
+                container.innerHTML += html;
+            });
+        }
+
+        // --- 5. 어드민 (선생님용) ---
+        function renderAdmin(data) {
+            const pending = document.getElementById('adm-praise-pending');
+            pending.innerHTML = '';
+            const praiseObj = data.praise || {};
             Object.entries(praiseObj).forEach(([id, p]) => {
                 if(!p.approved) {
-                    container.innerHTML += `
-                        <div class="card">
-                            [${p.from} -> ${p.to}] ${p.content}
-                            <button onclick="approvePraise('${id}', '${p.from}', '${p.to}')" style="background:#2ecc71; color:white; border:none; padding:5px 10px; cursor:pointer;">승인(+5점)</button>
-                            <button onclick="deletePraise('${id}')" style="background:#e74c3c; color:white; border:none; padding:5px 10px; cursor:pointer;">삭제</button>
-                        </div>`;
+                    pending.innerHTML += `<div class='glass-card'>[${p.from}->${p.to}] ${p.content} <button onclick="approvePraise('${id}','${p.from}','${p.to}')">승인</button></div>`;
                 }
             });
         }
 
         window.approvePraise = (id, from, to) => {
             update(ref(db, `class306/praise/${id}`), { approved: true });
-            const fromRef = ref(db, `class306/mileage/${from}`);
-            const toRef = ref(db, `class306/mileage/${to}`);
-            onValue(fromRef, s => set(fromRef, (s.val()||0)+2), {onlyOnce:true});
-            onValue(toRef, s => set(toRef, (s.val()||0)+5), {onlyOnce:true});
+            // 자동 점수: 제보자 2, 주인공 5
+            const mRef = ref(db, 'class306/mileage');
+            onValue(mRef, snap => {
+                const cur = snap.val() || {};
+                update(mRef, { [from]: (cur[from]||0)+2, [to]: (cur[to]||0)+5 });
+            }, {onlyOnce:true});
         };
 
-        window.deletePraise = (id) => { if(confirm("삭제하시겠습니까?")) remove(ref(db, `class306/praise/${id}`)); };
-
-        window.submitImpression = () => {
-            const name = document.getElementById('imp-name').value;
-            const content = document.getElementById('imp-content').value;
-            const q = document.getElementById('daily-question').innerText;
-            if(!name || !content) return alert("이름과 내용을 입력하세요.");
-            push(ref(db, 'class306/impression'), { name, content, question: q });
-            const nameRef = ref(db, `class306/mileage/${name}`);
-            onValue(nameRef, s => set(nameRef, (s.val()||0)+1), {onlyOnce:true});
-            alert("오늘의 인상이 기록되었습니다! (+1점)");
+        window.addCalendar = () => {
+            const title = document.getElementById('adm-c-t').value;
+            const date = document.getElementById('adm-c-d').value;
+            push(ref(db, 'class306/calendar'), { title, date });
         };
-
-        function renderImpression(impObj) {
-            const container = document.getElementById('imp-list');
-            container.innerHTML = '';
-            Object.values(impObj).reverse().forEach(i => {
-                container.innerHTML += `<div class="card"><small>[${i.question}]</small><br><b>${i.name}</b>: ${i.content}</div>`;
-            });
-        }
 
         window.updateQuestion = () => {
-            const q = document.getElementById('adm-question').value;
-            if(!q) return;
+            const q = document.getElementById('adm-q').value;
             set(ref(db, 'class306/config/question'), q);
-            alert("질문이 변경되었습니다.");
         };
+
+        window.addStudentMileage = () => {
+            const name = document.getElementById('adm-m-n').value;
+            const score = parseInt(document.getElementById('adm-m-s').value);
+            const mRef = ref(db, `class306/mileage/${name}`);
+            onValue(mRef, s => set(mRef, (s.val()||0)+score), {onlyOnce:true});
+        };
+
     </script>
     <style>
-        :root { --primary-color: #4a90e2; --secondary-color: #f5f7fa; --accent-color: #e74c3c; --text-color: #333; }
-        body { font-family: 'Pretendard', sans-serif; background-color: var(--secondary-color); color: var(--text-color); margin: 0; display: flex; flex-direction: column; align-items: center; }
-        header { background-color: var(--primary-color); color: white; width: 100%; padding: 1rem 0; text-align: center; font-size: 1.2rem; }
-        nav { display: flex; background: white; width: 100%; max-width: 800px; margin: 1rem 0; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        nav button { flex: 1; padding: 1rem; border: none; background: none; cursor: pointer; font-size: 1rem; font-weight: bold; }
-        nav button.active { background-color: var(--primary-color); color: white; }
-        .content-section { display: none; width: 90%; max-width: 800px; background: white; padding: 2rem; border-radius: 15px; margin-bottom: 2rem; box-shadow: 0 4px 15px rgba(0,0,0,0.1); box-sizing: border-box; }
+        :root {
+            --mint: #b2f2bb;
+            --pink: #ffc9c9;
+            --main-grad: linear-gradient(135deg, #e6fbfe 0%, #edeffd 100%);
+            --point-grad: linear-gradient(90deg, #98FFD9 0%, #FFC2D1 100%);
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background: var(--main-grad);
+            margin: 0; padding: 0;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; color: #444;
+        }
+
+        header {
+            width: 100%; padding: 40px 0;
+            text-align: center;
+        }
+
+        h1 {
+            font-weight: 800; font-size: 2.2rem; margin: 0;
+            background: var(--point-grad);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        nav {
+            display: flex; gap: 10px; margin-bottom: 30px;
+        }
+
+        nav button {
+            padding: 10px 20px; border: none; border-radius: 20px;
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(10px); cursor: pointer;
+            font-weight: 600; transition: 0.3s;
+        }
+
+        nav button.active {
+            background: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            color: #ff85a1;
+        }
+
+        .content-section {
+            display: none; width: 90%; max-width: 600px;
+            animation: fadeIn 0.5s ease;
+        }
+
         .content-section.active { display: block; }
-        .card { background: #f9f9f9; padding: 1rem; border-radius: 10px; margin-bottom: 1rem; border: 1px solid #ddd; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-        th { background-color: var(--primary-color); color: white; }
-        input, textarea, button.submit-btn { width: 100%; padding: 12px; margin: 8px 0; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; font-size: 1rem; }
-        button.submit-btn { background: var(--primary-color); color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button.submit-btn:hover { opacity: 0.8; }
-        .d-day-area { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
-        .d-day-item { background: #333; color: #fff; padding: 10px 20px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; }
-        .admin-box { border: 2px dashed var(--accent-color); padding: 1.5rem; margin-top: 1rem; border-radius: 10px; }
-        h2 { margin-top: 0; color: var(--primary-color); }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 25px; margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.07);
+        }
+
+        h2 { text-align: center; font-size: 1.5rem; margin-bottom: 20px; }
+
+        /* 서브 탭 스타일 */
+        .sub-nav { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; }
+        .sub-nav button {
+            background: none; border: none; font-size: 1rem; color: #999;
+            cursor: pointer; padding-bottom: 5px; border-bottom: 2px solid transparent;
+        }
+        .sub-nav button.active { color: #333; border-bottom: 2px solid #98FFD9; font-weight: bold; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* 디데이 */
+        .d-day-wrap { display: flex; justify-content: space-around; margin-bottom: 30px; }
+        .d-day-box { text-align: center; }
+        .d-day-box div { font-size: 0.9rem; color: #888; }
+        .d-day-box strong { font-size: 1.8rem; color: #ff85a1; }
+
+        /* 입력창 스타일 */
+        input, textarea {
+            width: 100%; padding: 15px; margin-bottom: 15px;
+            border-radius: 12px; border: 1px solid #eee;
+            box-sizing: border-box; font-family: inherit;
+        }
+        .btn-main {
+            width: 100%; padding: 15px; border: none; border-radius: 12px;
+            background: var(--point-grad); color: white; font-weight: bold;
+            cursor: pointer; font-size: 1rem;
+        }
+
+        /* 리스트 아이템 */
+        .rank-item { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; }
+        .ans-item { padding: 10px; background: rgba(255,255,255,0.4); border-radius: 10px; margin-top: 5px; }
+        .date-group { margin-bottom: 30px; }
+        .q-title { font-weight: bold; color: #4a90e2; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-<header><h1>3학년 6반 DASHBOARD</h1></header>
+<header>
+    <h1>306 CLASS DASHBOARD</h1>
+</header>
 
 <nav>
     <button onclick="showSection('home')" id="btn-home" class="active">🏠 홈</button>
     <button onclick="showSection('mileage')" id="btn-mileage">🏆 마일리지</button>
     <button onclick="showSection('praise')" id="btn-praise">🔒 칭찬감옥</button>
-    <button onclick="showSection('impression')" id="btn-impression">📝 인상</button>
-    <button onclick="showSection('admin')" id="btn-admin" style="color: var(--accent-color);">⚙️ 관리</button>
+    <button onclick="showSection('today')" id="btn-today">📝 오늘 하루</button>
+    <button onclick="showSection('admin')" id="btn-admin" style="color:#ff85a1">⚙️</button>
 </nav>
 
 <section id="home" class="content-section active">
-    <div class="d-day-area">
-        <div class="d-day-item">함께한 지 <span id="days-since">0</span>일</div>
-        <div class="d-day-item">졸업까지 <span id="days-until">0</span>일</div>
+    <div class="glass-card">
+        <div class="d-day-wrap">
+            <div class="d-day-box"><div>함께한 지</div><strong id="d-day-start">0</strong>일</div>
+            <div class="d-day-box"><div>졸업까지</div><strong id="d-day-end">0</strong>일</div>
+        </div>
+        <h2>306 캘린더</h2>
+        <div id="cal-list"></div>
     </div>
-    <h2>306 캘린더</h2>
-    <div id="calendar-list"></div>
 </section>
 
 <section id="mileage" class="content-section">
-    <h2>306 마일리지 랭킹</h2>
-    <table>
-        <thead><tr><th>순위</th><th>이름</th><th>점수</th></tr></thead>
-        <tbody id="mileage-tbody"></tbody>
-    </table>
+    <div class="sub-nav">
+        <button class="active" onclick="showSubTab('mileage','m-method')">적립 방법</button>
+        <button onclick="showSubTab('mileage','m-rank')">실시간 랭킹</button>
+    </div>
+    <div id="m-method" class="tab-content active">
+        <div class="glass-card">
+            <h2>마일리지 적립 가이드</h2>
+            <p style="text-align: center; color: #888;">(여기에 적립 방법을 입력하세요. 어드민에서 일괄 적립됩니다.)</p>
+        </div>
+    </div>
+    <div id="m-rank" class="tab-content">
+        <div class="glass-card">
+            <h2>306 명예의 전당</h2>
+            <div id="mileage-rank-list"></div>
+        </div>
+    </div>
 </section>
 
 <section id="praise" class="content-section">
-    <h2>칭찬 감옥 (실명제)</h2>
-    <div class="card">
-        <input type="text" id="praise-from" placeholder="보내는 사람 (실명)">
-        <input type="text" id="praise-to" placeholder="칭찬할 친구 (실명)">
-        <textarea id="praise-content" placeholder="칭찬 내용을 구체적으로 적어주세요."></textarea>
-        <button class="submit-btn" onclick="submitPraise()">칭찬 제보하기</button>
+    <div class="sub-nav">
+        <button class="active" onclick="showSubTab('praise','p-send')">제보하기</button>
+        <button onclick="showSubTab('praise','p-view')">모아보기</button>
     </div>
-    <hr>
-    <div id="praise-list"></div>
+    <div id="p-send" class="tab-content active">
+        <div class="glass-card">
+            <h2>칭찬 제보</h2>
+            <input type="text" id="p-from" placeholder="제보자 이름">
+            <input type="text" id="p-to" placeholder="칭찬 주인공 이름">
+            <textarea id="p-content" placeholder="친구의 멋진 점을 적어주세요."></textarea>
+            <button class="btn-main" onclick="submitPraise()">제보 완료</button>
+        </div>
+    </div>
+    <div id="p-view" class="tab-content">
+        <div id="praise-view-list"></div>
+    </div>
 </section>
 
-<section id="impression" class="content-section">
-    <h2>오늘 하루 인상 남기기</h2>
-    <div class="card">
-        <h3 id="daily-question" style="color: #444;">로딩 중...</h3>
-        <input type="text" id="imp-name" placeholder="이름 (실명)">
-        <textarea id="imp-content" placeholder="오늘 하루는 어땠나요?"></textarea>
-        <button class="submit-btn" onclick="submitImpression()">기록 남기기</button>
+<section id="today" class="content-section">
+    <div class="sub-nav">
+        <button class="active" onclick="showSubTab('today','t-write')">오늘의 질문</button>
+        <button onclick="showSubTab('today','t-view')">모아보기</button>
     </div>
-    <hr>
-    <div id="imp-list"></div>
+    <div id="t-write" class="tab-content active">
+        <div class="glass-card">
+            <h2 id="daily-q-text">질문을 불러오는 중...</h2>
+            <input type="text" id="t-name" placeholder="본인 이름">
+            <textarea id="t-content" placeholder="답변을 적어주세요."></textarea>
+            <button class="btn-main" onclick="submitToday()">기록하기</button>
+        </div>
+    </div>
+    <div id="t-view" class="tab-content">
+        <div id="today-view-list"></div>
+    </div>
 </section>
 
 <section id="admin" class="content-section">
-    <h2 style="color: var(--accent-color);">학급 관리자 모드</h2>
-    <div class="admin-box">
-        <h3>1. 마일리지 수동 관리</h3>
-        <input type="text" id="adm-name" placeholder="학생 이름">
-        <input type="number" id="adm-score" placeholder="부여할 점수 (예: 10 또는 -5)">
-        <button class="submit-btn" onclick="addMileage()" style="background: #333;">점수 반영</button>
-    </div>
-    <div class="admin-box">
-        <h3>2. 칭찬 감옥 승인 대기 목록</h3>
-        <div id="admin-praise-pending"></div>
-    </div>
-    <div class="admin-box">
-        <h3>3. 캘린더 및 질문 설정</h3>
-        <input type="text" id="adm-cal-title" placeholder="행사명/생일">
-        <input type="date" id="adm-cal-date">
-        <button class="submit-btn" onclick="addCalendar()" style="background: #333;">일정 추가</button>
+    <div class="glass-card">
+        <h2>선생님 관리 도구</h2>
+        <div class="admin-box">
+            <h4>마일리지 일괄/개별 적립</h4>
+            <input type="text" id="adm-m-n" placeholder="학생 이름">
+            <input type="number" id="adm-m-s" placeholder="점수 (예: 10)">
+            <button onclick="addStudentMileage()">적립</button>
+        </div>
         <hr>
-        <input type="text" id="adm-question" placeholder="새로운 오늘의 질문 입력">
-        <button class="submit-btn" onclick="updateQuestion()" style="background: #333;">질문 변경</button>
+        <h4>칭찬 승인 대기</h4>
+        <div id="adm-praise-pending"></div>
+        <hr>
+        <h4>오늘의 질문 변경</h4>
+        <input type="text" id="adm-q" placeholder="새로운 질문 입력">
+        <button onclick="updateQuestion()">변경</button>
+        <hr>
+        <h4>일정 추가</h4>
+        <input type="text" id="adm-c-t" placeholder="행사명">
+        <input type="date" id="adm-c-d">
+        <button onclick="addCalendar()">추가</button>
     </div>
 </section>
 
