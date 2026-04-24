@@ -118,10 +118,61 @@
 
         // ---- 오늘의 질문 자동 생성 ----
         const questionBank = [
-            "오늘 수업에서 가장 기억에 남는 것은?","오늘 친구에게 고마웠던 순간은?","오늘 나 자신이 자랑스러웠던 점은?",
-            "오늘 가장 웃겼던 일은?","오늘 나에게 하고 싶은 말은?","오늘 배운 것 중 삶에 적용하고 싶은 것은?",
-            "오늘 힘들었던 순간과 그것을 어떻게 극복했나요?","오늘의 한 줄 일기를 써볼까요?","오늘 가장 집중했던 순간은?",
-            "오늘 누군가를 도왔거나 도움을 받았나요?","오늘 새롭게 알게 된 사실이 있나요?","오늘 하루 점수를 매기자면? 그 이유는?"
+            // 😊 가볍고 재밌는 것
+            "오늘 점심 메뉴에 점수를 매긴다면 몇 점인가요?",
+            "오늘 하루를 날씨로 표현하면 어떤 날씨인가요?",
+            "오늘 나를 동물로 표현하면 어떤 동물인가요?",
+            "오늘 BGM으로 깔고 싶은 노래가 있나요?",
+            "오늘 나의 에너지 잔량은 몇 퍼센트인가요?",
+            "오늘 가장 웃겼던 일은 무엇인가요?",
+            "오늘 나를 색깔로 표현하면 어떤 색인가요?",
+            "지금 당장 먹고 싶은 음식이 있나요?",
+            "오늘 하루를 영화 제목으로 붙인다면 무엇인가요?",
+            "오늘 나의 TMI를 하나만 공유해볼까요?",
+            // 🌱 성찰·감사
+            "오늘 친구에게 고마웠던 순간이 있나요?",
+            "오늘 나 자신이 자랑스러웠던 점은 무엇인가요?",
+            "오늘 나에게 하고 싶은 말이 있나요?",
+            "오늘 힘들었던 순간을 어떻게 극복했나요?",
+            "오늘 누군가를 도왔거나 도움을 받은 적이 있나요?",
+            "오늘 후회되는 일이 있다면 무엇인가요?",
+            "내일의 나에게 편지를 쓴다면 첫 문장은 무엇인가요?",
+            "오늘 가장 감사했던 순간은 언제인가요?",
+            "최근 나를 성장시킨 경험이 있나요?",
+            "지금 이 순간 가장 소중한 것은 무엇인가요?",
+            // 📚 학습 관련
+            "오늘 수업에서 가장 기억에 남는 것은 무엇인가요?",
+            "오늘 배운 것 중 삶에 적용하고 싶은 것이 있나요?",
+            "오늘 가장 집중했던 순간은 언제인가요?",
+            "오늘 새롭게 알게 된 사실이 있나요?",
+            "요즘 가장 흥미로운 과목과 그 이유가 궁금해요!",
+            "나만의 공부 꿀팁이 있다면 공유해볼까요?",
+            "오늘 수업 중 가장 어려웠던 부분은 무엇인가요?",
+            "졸업 후 꼭 배우고 싶은 것이 있나요?",
+            "오늘 하루 집중력 점수는 몇 점인가요?",
+            "나의 꿈과 오늘 배운 것이 연결된다면 어떻게 연결되나요?",
+            // 🤪 엉뚱한 것
+            "100억이 생긴다면 제일 먼저 무엇을 하고 싶은가요?",
+            "하루 동안 선생님이 된다면 어떤 수업을 하고 싶은가요?",
+            "무인도에 딱 하나만 가져간다면 무엇을 가져가고 싶은가요?",
+            "슈퍼히어로라면 어떤 능력을 갖고 싶은가요?",
+            "과거로 돌아갈 수 있다면 언제로 가고 싶은가요?",
+            "동물로 태어난다면 어떤 동물이 되고 싶은가요?",
+            "급식 메뉴를 내가 직접 정할 수 있다면 무엇으로 하고 싶은가요?",
+            "우리 반에서 무인도 서바이벌을 한다면 최후의 1인은 누구일까요?",
+            "내가 연예인이라면 어떤 포지션일 것 같은가요?",
+            "교실에 비밀통로가 생긴다면 어디로 연결되면 좋겠나요?",
+            // 🔥 트렌디·진지한 것
+            "MBTI에 비춰봤을 때 나의 장점과 단점은 무엇인가요?",
+            "나를 밈(meme)으로 표현하면 어떤 밈일 것 같은가요?",
+            "요즘 나의 최애 콘텐츠는 무엇인가요?",
+            "10년 후 나는 어떤 모습일 것 같은가요?",
+            "나의 인생 좌우명이 있다면 무엇인가요?",
+            "요즘 가장 고민되는 것은 무엇인가요?",
+            "내 인생에서 가장 잘한 선택은 무엇인가요?",
+            "나는 어떤 어른이 되고 싶은가요?",
+            "요즘 가장 빠져있는 것이 있다면 무엇인가요?",
+            "지금 이 순간 306반에 하고 싶은 말이 있나요?"
         ];
 
         function autoSetDailyQuestion(config) {
@@ -364,12 +415,56 @@
             if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db, `class306/calendar/${id}`));
         };
 
+        // ---- 적립 방법 파싱 (사유: +NP 형식) ----
+        function parseReasons(text) {
+            const lines = (text || "").split('\n').map(l => l.trim()).filter(Boolean);
+            const result = [];
+            lines.forEach(line => {
+                const match = line.match(/^(.+?):\s*\+(\d+)P$/);
+                if (match) result.push({ label: match[1].trim(), score: parseInt(match[2]) });
+            });
+            return result;
+        }
+
+        // ---- 적립 사유 드롭다운 갱신 ----
+        function updateReasonDropdowns() {
+            const reasons = parseReasons(globalData.config?.reasons || "칭찬제보: +1P\n오늘하루: +1P");
+            ['adm-reason-select', 'adm-group-reason-select'].forEach(id => {
+                const sel = document.getElementById(id);
+                if (!sel) return;
+                sel.innerHTML = '<option value="">사유 선택</option>';
+                reasons.forEach(r => {
+                    sel.innerHTML += `<option value="${r.label}" data-score="${r.score}">${r.label} (+${r.score}P)</option>`;
+                });
+                sel.innerHTML += '<option value="__other__">기타 (직접 입력)</option>';
+            });
+        }
+
+        window.onReasonChange = (selectId, scoreId, customId) => {
+            const sel = document.getElementById(selectId);
+            const scoreEl = document.getElementById(scoreId);
+            const customEl = document.getElementById(customId);
+            const chosen = sel.options[sel.selectedIndex];
+            if (sel.value === '__other__') {
+                customEl.style.display = 'block';
+                scoreEl.value = '';
+                scoreEl.readOnly = false;
+            } else if (sel.value) {
+                customEl.style.display = 'none';
+                scoreEl.value = chosen.dataset.score;
+                scoreEl.readOnly = true;
+            } else {
+                customEl.style.display = 'none';
+                scoreEl.value = '';
+                scoreEl.readOnly = false;
+            }
+        };
+
         // ---- 관리자 - 마일리지 ----
         function renderAdminMileage(data) {
             const config = data.config || {};
             const mileageObj = data.mileage || {};
 
-            // 적립 사유 설정값 표시
             const reasonsInput = document.getElementById('adm-reasons-input');
             if (reasonsInput && !reasonsInput.dataset.dirty) reasonsInput.value = config.reasons || "칭찬제보: +1P\n오늘하루: +1P";
             const personalInput = document.getElementById('adm-personal-rewards-input');
@@ -377,62 +472,77 @@
             const groupInput = document.getElementById('adm-group-rewards-input');
             if (groupInput && !groupInput.dataset.dirty) groupInput.value = config.groupRewards || "3,000P: 학급 파티";
 
-            // 학생 마일리지 목록
-            const list = document.getElementById('adm-mileage-list');
-            if (!list) return;
-            list.innerHTML = '';
-            const allScores = {};
-            studentList.forEach(name => { allScores[name] = mileageObj[name] || 0; });
-            const sorted = Object.entries(allScores).sort((a, b) => b[1] - a[1]);
-            sorted.forEach(([name, score]) => {
-                list.innerHTML += `
-                    <div class="adm-mileage-item">
-                        <span class="adm-m-name">${name}</span>
-                        <span class="adm-m-score">${score}P</span>
-                        <div class="adm-m-controls">
-                            <input type="number" id="mi-${name}" placeholder="점수" class="mini-input" min="0">
-                            <button class="btn-add-sm" onclick="adjustMileage('${name}', 'add')">+</button>
-                            <button class="btn-danger-sm" onclick="adjustMileage('${name}', 'sub')">-</button>
-                        </div>
-                    </div>`;
-            });
+            updateReasonDropdowns();
 
-            // 단체 적립 select
-            const sel = document.getElementById('adm-group-st-select');
-            if (sel) {
-                sel.innerHTML = '<option value="">학생 선택 (전체 단체)</option>';
-                studentList.forEach(name => { sel.innerHTML += `<option value="${name}">${name}</option>`; });
+            // 학생 체크박스 목록
+            const listEl = document.getElementById('adm-mileage-list');
+            if (listEl) {
+                listEl.innerHTML = '';
+                const allScores = {};
+                studentList.forEach(name => { allScores[name] = mileageObj[name] || 0; });
+                const sorted = Object.entries(allScores).sort((a, b) => b[1] - a[1]);
+                sorted.forEach(([name, score]) => {
+                    listEl.innerHTML += `
+                        <div class="adm-mileage-item">
+                            <input type="checkbox" class="student-check" value="${name}" id="chk-${name}">
+                            <label for="chk-${name}" class="adm-m-name">${name}</label>
+                            <span class="adm-m-score">${score}P</span>
+                        </div>`;
+                });
             }
         }
 
-        window.adjustMileage = (name, type) => {
-            const scoreInput = document.getElementById(`mi-${name}`);
-            const score = parseInt(scoreInput.value);
-            if (isNaN(score) || score <= 0) return showToast("점수를 입력하세요.", 'error');
-            const mRef = ref(db, `class306/mileage/${name}`);
-            get(mRef).then(s => {
-                const cur = s.val() || 0;
-                const next = type === 'add' ? cur + score : Math.max(0, cur - score);
-                set(mRef, next);
-                scoreInput.value = '';
-                showToast(`${name} ${type === 'add' ? '+' : '-'}${score}P ${type === 'add' ? '적립' : '차감'} 완료!`);
-            });
+        // 전체 선택/해제
+        window.toggleAllStudents = (type) => {
+            const checkboxes = document.querySelectorAll(`#adm-mileage-list .student-check`);
+            checkboxes.forEach(cb => { cb.checked = type === 'all'; });
         };
 
-        window.groupMileage = () => {
-            const score = parseInt(document.getElementById('adm-group-score').value);
-            const reason = document.getElementById('adm-group-reason').value.trim();
-            const target = document.getElementById('adm-group-st-select').value;
-            if (isNaN(score) || score <= 0) return showToast("점수를 입력하세요.", 'error');
-            const targets = target ? [target] : studentList;
-            const label = target ? target : "전체";
-            if (!confirm(`${label}에게 ${score}P 단체 적립할까요?`)) return;
+        // 적립 실행 (개인 다중 선택)
+        window.doMileageAdd = () => {
+            const sel = document.getElementById('adm-reason-select');
+            const scoreEl = document.getElementById('adm-add-score');
+            const customEl = document.getElementById('adm-reason-custom');
+            const reason = sel.value === '__other__' ? customEl.value.trim() : sel.value;
+            const score = parseInt(scoreEl.value);
+            const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
+
+            if (!reason) return showToast("사유를 선택하거나 입력하세요.", 'error');
+            if (isNaN(score) || score <= 0) return showToast("점수를 확인하세요.", 'error');
+            if (checked.length === 0) return showToast("학생을 한 명 이상 선택하세요.", 'error');
+
+            if (!confirm(`${checked.join(', ')}에게 [${reason}] ${score}P 적립할까요?`)) return;
             get(ref(db, 'class306/mileage')).then(snap => {
                 const cur = snap.val() || {};
                 const updates = {};
-                targets.forEach(name => { updates[name] = (cur[name] || 0) + score; });
+                checked.forEach(name => { updates[name] = (cur[name] || 0) + score; });
                 update(ref(db, 'class306/mileage'), updates);
-                showToast("단체 적립 완료!");
+                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
+                sel.value = '';
+                scoreEl.value = '';
+                scoreEl.readOnly = false;
+                customEl.style.display = 'none';
+                customEl.value = '';
+                showToast(`${checked.length}명 +${score}P 적립 완료!`);
+            });
+        };
+
+        // 차감 실행
+        window.doMileageSub = () => {
+            const scoreEl = document.getElementById('adm-sub-score');
+            const score = parseInt(scoreEl.value);
+            const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
+            if (isNaN(score) || score <= 0) return showToast("차감 점수를 입력하세요.", 'error');
+            if (checked.length === 0) return showToast("학생을 선택하세요.", 'error');
+            if (!confirm(`${checked.join(', ')}에서 ${score}P 차감할까요?`)) return;
+            get(ref(db, 'class306/mileage')).then(snap => {
+                const cur = snap.val() || {};
+                const updates = {};
+                checked.forEach(name => { updates[name] = Math.max(0, (cur[name] || 0) - score); });
+                update(ref(db, 'class306/mileage'), updates);
+                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
+                scoreEl.value = '';
+                showToast(`${checked.length}명 -${score}P 차감 완료!`);
             });
         };
 
@@ -444,6 +554,7 @@
             document.getElementById('adm-reasons-input').dataset.dirty = '';
             document.getElementById('adm-personal-rewards-input').dataset.dirty = '';
             document.getElementById('adm-group-rewards-input').dataset.dirty = '';
+            updateReasonDropdowns();
             showToast("설정이 저장되었습니다!");
         };
 
@@ -963,18 +1074,38 @@
         .adm-cal-add { display: flex; gap: 8px; align-items: flex-end; }
         .adm-cal-add input { flex: 1; margin-bottom: 0; }
 
+        .student-check-list {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            max-height: 220px;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
         .adm-mileage-item {
             display: flex;
             align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--border);
-            gap: 8px;
+            gap: 6px;
+            padding: 7px 10px;
+            background: white;
+            border-radius: 10px;
+            border: 1.5px solid var(--border);
+            cursor: pointer;
+            transition: border-color 0.15s;
         }
-        .adm-mileage-item:last-child { border-bottom: none; }
-        .adm-m-name { flex: 1; font-weight: 600; font-size: 0.9rem; }
-        .adm-m-score { font-weight: 800; color: var(--primary); min-width: 44px; text-align: right; font-size: 0.9rem; }
-        .adm-m-controls { display: flex; gap: 4px; align-items: center; }
-        .mini-input { width: 60px !important; padding: 6px 8px !important; margin-bottom: 0 !important; font-size: 0.85rem !important; text-align: center; }
+        .adm-mileage-item:has(.student-check:checked) {
+            border-color: var(--primary);
+            background: #fff5f5;
+        }
+        .adm-mileage-item input[type="checkbox"] { accent-color: var(--primary); cursor: pointer; }
+        .adm-m-name { flex: 1; font-weight: 600; font-size: 0.82rem; cursor: pointer; }
+        .adm-m-score { font-weight: 800; color: var(--primary); font-size: 0.78rem; }
+        .btn-sel-all {
+            padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border);
+            background: white; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+            font-family: inherit; color: var(--text-sub); transition: all 0.2s;
+        }
+        .btn-sel-all:hover { border-color: #333; color: #333; }
         .btn-add-sm {
             padding: 6px 10px; border: none; border-radius: 8px;
             background: var(--accent); color: white; font-weight: 700; cursor: pointer; font-size: 0.8rem;
@@ -1238,10 +1369,11 @@
         <div class="glass-card">
             <h2>💰 마일리지 관리</h2>
 
+            <!-- 적립/보상 설정 -->
             <div class="adm-section">
                 <h4>적립 방법 설정</h4>
-                <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:8px;">한 줄에 하나씩 입력하세요 (예: 칭찬제보: +1P)</p>
-                <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P"></textarea>
+                <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:8px;">한 줄에 하나씩 <b>사유: +점수P</b> 형식으로 입력하세요</p>
+                <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;지각자 없음: +2P"></textarea>
                 <h4 style="margin-top:4px;">개인 보상 설정</h4>
                 <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
                 <h4 style="margin-top:4px;">단체 보상 설정</h4>
@@ -1249,19 +1381,34 @@
                 <button class="btn-main" onclick="saveConfig()">설정 저장</button>
             </div>
 
+            <!-- 마일리지 적립하기 -->
             <div class="adm-section">
-                <h4>단체 적립</h4>
-                <select id="adm-group-st-select"></select>
-                <div style="display:flex; gap:8px; margin-bottom:10px;">
-                    <input type="text" id="adm-group-reason" placeholder="사유" style="flex:2; margin-bottom:0">
-                    <input type="number" id="adm-group-score" placeholder="점수" style="flex:1; margin-bottom:0; min-width:0">
-                </div>
-                <button class="btn-main" onclick="groupMileage()">단체 적립</button>
-            </div>
+                <h4>마일리지 적립하기 (개인, 단체)</h4>
 
-            <div class="adm-section">
-                <h4>개인별 마일리지 조정</h4>
-                <div id="adm-mileage-list"></div>
+                <!-- 사유 드롭다운 -->
+                <select id="adm-reason-select" onchange="onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')">
+                    <option value="">적립 사유 선택</option>
+                </select>
+                <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
+                <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
+                    <input type="number" id="adm-add-score" placeholder="점수" style="flex:1; margin-bottom:0; min-width:0;">
+                    <span style="font-size:0.85rem; color:var(--text-sub); white-space:nowrap;">P 적립</span>
+                </div>
+
+                <!-- 학생 선택 -->
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <button class="btn-sel-all" onclick="toggleAllStudents('all')">전체 선택</button>
+                    <button class="btn-sel-all" onclick="toggleAllStudents('none')">전체 해제</button>
+                </div>
+                <div id="adm-mileage-list" class="student-check-list"></div>
+
+                <div style="display:flex; gap:8px; margin-top:12px;">
+                    <button class="btn-main" onclick="doMileageAdd()" style="flex:2;">✅ 적립하기</button>
+                    <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                        <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0; font-size:0.82rem; padding:8px;">
+                        <button class="btn-danger-sm" style="width:100%; padding:8px;" onclick="doMileageSub()">차감하기</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
