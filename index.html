@@ -34,7 +34,7 @@
 
         // ★ Claude API 키 — 실제 키로 교체하세요
         const CLAUDE_API_KEY = "여기에_Claude_API_키_입력";
-        // ★ 하루 최대 인증 횟수
+        // ★ 하루 최대 체크 횟수
         const MAX_DAILY_CERT = 1;
         // ★ 인증 1회당 마일리지
         const CERT_MILEAGE = 3;
@@ -173,7 +173,7 @@
         }
 
         // =============================================
-        // ★★★ 공부 인증 기능 ★★★
+        // ★★★ 스터디 체크 기능 ★★★
         // =============================================
 
         // 사진 미리보기
@@ -203,7 +203,7 @@
             input.click();
         };
 
-        // 오늘 해당 학생의 인증 횟수 확인
+        // 오늘 해당 학생의 체크 횟수 확인
         function getTodayCertCount(name) {
             const todayStr = new Date().toISOString().slice(0, 10);
             const certs = globalData.studyCert || {};
@@ -226,7 +226,7 @@
             // 하루 1회 제한
             const todayCount = getTodayCertCount(name);
             if (todayCount >= MAX_DAILY_CERT) {
-                return showToast(`오늘은 이미 인증했어요! 내일 또 해요 😊`, 'error');
+                return showToast(`오늘은 이미 체크했어요! 내일 또 해요 😊`, 'error');
             }
 
             btn.disabled = true;
@@ -354,7 +354,7 @@
                 showToast("오류가 발생했어요. 잠시 후 다시 시도해주세요.", 'error');
             } finally {
                 btn.disabled = false;
-                btn.innerText = "공부 인증하기 📚";
+                btn.innerText = "스터디 체크하기 📚";
                 document.getElementById('cert-file-input').value = '';
                 document.getElementById('cert-study-content').value = '';
                 document.getElementById('cert-preview').style.display = 'none';
@@ -372,12 +372,12 @@
             box.style.display = 'block';
             box.className = 'cert-result-box ' + (result.pass ? 'pass' : 'fail');
             emoji.innerText = result.emoji || (result.pass ? '🎉' : '😢');
-            title.innerText = result.pass ? '인증 완료!' : '인증 실패';
+            title.innerText = result.pass ? '체크 완료!' : '체크 실패';
             desc.innerText = result.pass
-                ? `"${studyContent}" 공부 확인!`
+                ? `"${studyContent}" 공부 확인! ✅`
                 : result.reason;
             mileage.innerText = result.pass
-                ? `${name} +${CERT_MILEAGE}P 적립! 오늘 인증 완료 ✅`
+                ? `${name} +${CERT_MILEAGE}P 적립! 오늘 체크 완료 ✅`
                 : (result.date_match === false
                     ? `📅 사진 날짜(${result.photo_date || '없음'})와 오늘 날짜가 달라요`
                     : '오늘 날짜 타임스탬프가 찍힌 공부 사진을 올려주세요!');
@@ -392,14 +392,14 @@
             });
         }
 
-        // 인증 내역 렌더링 (학생용)
+        // 체크 내역 렌더링 (학생용)
         window.renderStudyCertHistory = (certObj) => {
             const container = document.getElementById('cert-history-list');
             if (!container) return;
             container.innerHTML = '';
             const certs = Object.entries(certObj).sort((a, b) => new Date(b[1].time) - new Date(a[1].time)).slice(0, 30);
             if (certs.length === 0) {
-                container.innerHTML = "<p class='empty-msg'>아직 인증 기록이 없어요 📚</p>";
+                container.innerHTML = "<p class='empty-msg'>아직 체크 기록이 없어요 📚</p>";
                 return;
             }
             const grouped = {};
@@ -424,7 +424,7 @@
             });
         };
 
-        // 관리자 인증 내역 렌더링
+        // 관리자 체크 내역 렌더링
         function renderAdminStudyCert(certObj) {
             const container = document.getElementById('adm-cert-list');
             if (!container) return;
@@ -436,10 +436,10 @@
             const totalFail = certs.filter(([,c]) => c.result === 'fail').length;
             const totalMileage = certs.reduce((s, [,c]) => s + (c.mileage || 0), 0);
             document.getElementById('adm-cert-stats').innerHTML =
-                `총 인증: <b>${certs.length}건</b> · 통과: <b>${totalPass}</b> · 반려: <b>${totalFail}</b> · 적립: <b>${totalMileage}P</b>`;
+                `총 체크: <b>${certs.length}건</b> · 통과: <b>${totalPass}</b> · 반려: <b>${totalFail}</b> · 적립: <b>${totalMileage}P</b>`;
 
             if (certs.length === 0) {
-                container.innerHTML = "<p class='empty-msg'>인증 기록이 없습니다.</p>";
+                container.innerHTML = "<p class='empty-msg'>체크 기록이 없습니다.</p>";
                 return;
             }
             certs.slice(0, 50).forEach(([id, c]) => {
@@ -462,8 +462,8 @@
 
         window.deleteCertRecord = (id, name, mileage, result) => {
             const msg = result === 'pass'
-                ? `이 인증 기록을 삭제하면 ${name}(-${mileage}P) 차감됩니다. 삭제하시겠습니까?`
-                : `이 반려 기록을 삭제하시겠습니까?`;
+                ? `이 체크 기록을 삭제하면 ${name}(-${mileage}P) 차감됩니다. 삭제하시겠습니까?`
+                : `이 체크 반려 기록을 삭제하시겠습니까?`;
             if (!confirm(msg)) return;
             remove(ref(db, `class306/studyCert/${id}`));
             if (result === 'pass' && mileage > 0) {
@@ -578,7 +578,7 @@
             const reasonsEl = document.getElementById('display-reasons');
             const personalEl = document.getElementById('display-personal-rewards');
             const groupEl = document.getElementById('display-group-rewards');
-            if (reasonsEl) reasonsEl.innerHTML = formatGuideText(config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n공부인증: +2P");
+            if (reasonsEl) reasonsEl.innerHTML = formatGuideText(config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +2P");
             if (personalEl) personalEl.innerHTML = formatGuideText(config.personalRewards || "5P: 까까\n100P: 자리지정");
             if (groupEl) groupEl.innerHTML = formatGuideText(config.groupRewards || "3,000P: 학급 파티");
         }
@@ -752,7 +752,7 @@
         }
 
         function updateReasonDropdowns() {
-            const reasons = parseReasons(globalData.config?.reasons || "칭찬제보: +1P\n오늘하루: +1P\n공부인증: +2P");
+            const reasons = parseReasons(globalData.config?.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +2P");
             ['adm-reason-select'].forEach(id => {
                 const sel = document.getElementById(id);
                 if (!sel) return;
@@ -788,7 +788,7 @@
             const config = data.config || {};
             const mileageObj = data.mileage || {};
             const reasonsInput = document.getElementById('adm-reasons-input');
-            if (reasonsInput && !reasonsInput.dataset.dirty) reasonsInput.value = config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n공부인증: +2P";
+            if (reasonsInput && !reasonsInput.dataset.dirty) reasonsInput.value = config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +2P";
             const personalInput = document.getElementById('adm-personal-rewards-input');
             if (personalInput && !personalInput.dataset.dirty) personalInput.value = config.personalRewards || "5P: 까까\n100P: 자리지정";
             const groupInput = document.getElementById('adm-group-rewards-input');
@@ -1121,7 +1121,7 @@
         .guide-box.green { background: #f0fff4; border-left-color: var(--accent); }
         .guide-line { padding: 3px 0; font-size: 0.9rem; line-height: 1.5; }
 
-        /* ======= 공부 인증 스타일 ======= */
+        /* ======= 스터디 체크 스타일 ======= */
         .cert-upload-area {
             border: 2px dashed var(--study);
             border-radius: 16px;
@@ -1175,7 +1175,7 @@
         .cert-hist-info span { font-size: 0.78rem; color: var(--text-sub); }
         .cert-hist-score { font-weight: 800; color: var(--study); font-size: 0.9rem; flex-shrink: 0; }
 
-        /* 관리자 인증 내역 */
+        /* 관리자 체크 내역 */
         .adm-cert-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); gap: 10px; }
         .adm-cert-item:last-child { border-bottom: none; }
         .adm-cert-info { flex: 1; }
@@ -1296,7 +1296,7 @@
 <nav>
     <button class="nav-btn active" onclick="showSection('home')" id="btn-home">🏠 홈</button>
     <button class="nav-btn" onclick="showSection('mileage')" id="btn-mileage">⭐ 마일리지</button>
-    <button class="nav-btn study-btn" onclick="showSection('study')" id="btn-study">📚 공부인증</button>
+    <button class="nav-btn study-btn" onclick="showSection('study')" id="btn-study">📚 스터디 체크</button>
     <button class="nav-btn" onclick="showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
     <button class="nav-btn" onclick="showSection('today')" id="btn-today">✏️ 오늘 하루</button>
     <button class="nav-btn admin-btn" onclick="showSection('admin')" id="btn-admin">⚙️</button>
@@ -1349,16 +1349,16 @@
     </div>
 </section>
 
-<!-- ========== 공부 인증 ========== -->
+<!-- ========== 스터디 체크 ========== -->
 <section id="study" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab(this,'study','s-upload')">인증하기</button>
-        <button onclick="showSubTab(this,'study','s-history')">인증 내역</button>
+        <button class="active" onclick="showSubTab(this,'study','s-upload')">체크하기</button>
+        <button onclick="showSubTab(this,'study','s-history')">체크 내역</button>
     </div>
 
     <div id="s-upload" class="tab-content active">
         <div class="glass-card">
-            <h2>📚 공부 인증</h2>
+            <h2>📚 스터디 체크</h2>
             <div class="cert-limit-info">하루 1회 인증 · 통과 시 +3P 자동 적립 · 오늘 날짜 타임스탬프 필수</div>
 
             <!-- 이름 선택 -->
@@ -1385,7 +1385,7 @@
             <textarea id="cert-study-content" rows="2" placeholder="무엇을 공부했나요? (예: 수학 미적분, 영어 단어 암기)"></textarea>
 
             <!-- 제출 버튼 -->
-            <button class="btn-study-main" id="cert-submit-btn" onclick="submitStudyCert()">공부 인증하기 📚</button>
+            <button class="btn-study-main" id="cert-submit-btn" onclick="submitStudyCert()">스터디 체크하기 📚</button>
 
             <!-- 결과 박스 -->
             <div id="cert-result-box" class="cert-result-box" style="display:none;">
@@ -1399,7 +1399,7 @@
 
     <div id="s-history" class="tab-content">
         <div class="glass-card">
-            <h2>📋 인증 내역</h2>
+            <h2>📋 체크 내역</h2>
             <div id="cert-history-list"></div>
         </div>
     </div>
@@ -1462,7 +1462,7 @@
         <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-mileage')">마일리지</button>
         <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-praise')">칭찬감옥</button>
         <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-today')">오늘하루</button>
-        <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-cert')">공부인증</button>
+        <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-cert')">스터디 체크</button>
     </div>
 
     <!-- 관리자 홈 -->
@@ -1489,7 +1489,7 @@
             <div class="adm-section">
                 <h4>적립 방법 설정</h4>
                 <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:8px;">한 줄에 하나씩 <b>사유: +점수P</b> 형식</p>
-                <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;공부인증: +2P"></textarea>
+                <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;스터디 체크: +2P"></textarea>
                 <h4 style="margin-top:4px;">개인 보상 설정</h4>
                 <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
                 <h4 style="margin-top:4px;">단체 보상 설정</h4>
@@ -1543,10 +1543,10 @@
         </div>
     </div>
 
-    <!-- 관리자 공부인증 -->
+    <!-- 관리자 스터디 체크 -->
     <div id="adm-cert" class="adm-tab-content">
         <div class="glass-card">
-            <h2>📚 공부인증 관리</h2>
+            <h2>📚 스터디 체크 관리</h2>
             <!-- API 키 설정 -->
             <div class="adm-section">
                 <h4>🔑 Claude API 키 설정</h4>
@@ -1559,12 +1559,12 @@
             </div>
             <!-- 통계 -->
             <div class="adm-section">
-                <h4>📊 인증 통계</h4>
+                <h4>📊 체크 통계</h4>
                 <div id="adm-cert-stats" style="font-size:0.9rem; color:var(--text-sub); padding: 4px 0;"></div>
             </div>
-            <!-- 인증 내역 -->
+            <!-- 체크 내역 -->
             <div class="adm-section">
-                <h4>📋 전체 인증 내역</h4>
+                <h4>📋 전체 체크 내역</h4>
                 <div id="adm-cert-list"></div>
             </div>
         </div>
