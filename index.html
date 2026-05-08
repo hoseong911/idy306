@@ -8,6 +8,104 @@
     <!-- Pretendard & Gaegu 폰트 -->
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&display=swap" rel="stylesheet">
+    
+    <!-- 1. UI 전용 스크립트 (DB 연결과 무관하게 메뉴 버튼이 항상 작동하도록 분리) -->
+    <script>
+        window.adminLoggedIn = false;
+        window.ADMIN_PW = "1234";
+
+        window.showSection = (id) => {
+            if (id === 'admin') {
+                if (!window.adminLoggedIn) { window.showAdminModal(); return; }
+            }
+            document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('nav .nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.getElementById('btn-' + id).classList.add('active');
+        };
+
+        window.showSubTab = (btn, sectionId, tabId) => {
+            const section = document.getElementById(sectionId);
+            section.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            section.querySelectorAll('.sub-nav button').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            btn.classList.add('active');
+        };
+
+        window.showAdminModal = () => {
+            document.getElementById('admin-modal').classList.add('open');
+            document.getElementById('admin-pw-input').value = '';
+            setTimeout(() => document.getElementById('admin-pw-input').focus(), 100);
+        };
+        
+        window.closeAdminModal = () => {
+            document.getElementById('admin-modal').classList.remove('open');
+        };
+
+        window.tryAdminLogin = () => {
+            const pw = document.getElementById('admin-pw-input').value;
+            if (pw === window.ADMIN_PW) {
+                window.adminLoggedIn = true;
+                window.closeAdminModal();
+                document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+                document.querySelectorAll('nav .nav-btn').forEach(b => b.classList.remove('active'));
+                document.getElementById('admin').classList.add('active');
+                document.getElementById('btn-admin').classList.add('active');
+                window.showAdminTab(document.querySelector('.adm-tab-btn'), 'adm-home');
+            } else {
+                document.getElementById('admin-pw-error').style.display = 'block';
+                document.getElementById('admin-pw-input').classList.add('shake');
+                setTimeout(() => document.getElementById('admin-pw-input').classList.remove('shake'), 500);
+            }
+        };
+
+        window.showAdminTab = (btn, tabId) => {
+            document.querySelectorAll('.adm-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.adm-tab-content').forEach(t => t.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        };
+
+        window.showToast = (msg, type = 'success') => {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.className = 'toast show ' + type;
+            clearTimeout(t._timer);
+            t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+        };
+
+        window.previewCertPhoto = (input) => {
+            const file = input.files[0];
+            if (!file) return;
+            const preview = document.getElementById('cert-preview');
+            const placeholder = document.getElementById('cert-placeholder');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                placeholder.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.triggerCamera = () => {
+            const input = document.getElementById('cert-file-input');
+            input.setAttribute('capture', 'environment');
+            input.click();
+        };
+        
+        window.triggerGallery = () => {
+            const input = document.getElementById('cert-file-input');
+            input.removeAttribute('capture');
+            input.click();
+        };
+
+        window.toggleAllStudents = (type) => {
+            document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => { cb.checked = type === 'all'; });
+        };
+    </script>
+
+    <!-- 2. Firebase 데이터 통신 스크립트 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
         import { getDatabase, ref, set, push, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
@@ -29,70 +127,19 @@
 
         const startDate = new Date("2026-03-03");
         const endDate = new Date("2027-01-08");
-        const ADMIN_PW = "1234";
         const studentList = ["강예울","김가윤","김근형","김도현","김보배","김시우","김주하","김지호","김태훈","김하음","문지민","박나윤","박민호","박지민","신주현","이규연","이시원","이예준","이준서","임은교","임주호","장민혁","제윤아","조하연","최강유","최도윤","최성현"];
 
         const holidays = ["2026-01-01","2026-01-28","2026-01-29","2026-01-30","2026-03-01","2026-05-05","2026-05-25","2026-06-06","2026-08-15","2026-09-24","2026-09-25","2026-09-26","2026-10-03","2026-10-09","2026-12-25"];
 
-        // ★ Claude API 키 — 실제 키로 교체하세요
         const CLAUDE_API_KEY = "여기에_Claude_API_키_입력";
         const MAX_DAILY_CERT = 1;
         const CERT_MILEAGE = 3;
 
         let globalData = {};
-        let adminLoggedIn = false;
 
-        window.showSection = (id) => {
-            if (id === 'admin') {
-                if (!adminLoggedIn) { showAdminModal(); return; }
-            }
-            document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('nav .nav-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            document.getElementById('btn-' + id).classList.add('active');
-        };
-
-        window.showSubTab = (btn, sectionId, tabId) => {
-            const section = document.getElementById(sectionId);
-            section.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            section.querySelectorAll('.sub-nav button').forEach(b => b.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-            btn.classList.add('active');
-        };
-
-        window.showAdminModal = () => {
-            document.getElementById('admin-modal').classList.add('open');
-            document.getElementById('admin-pw-input').value = '';
-            setTimeout(() => document.getElementById('admin-pw-input').focus(), 100);
-        };
-        window.closeAdminModal = () => {
-            document.getElementById('admin-modal').classList.remove('open');
-        };
-        window.tryAdminLogin = () => {
-            const pw = document.getElementById('admin-pw-input').value;
-            if (pw === ADMIN_PW) {
-                adminLoggedIn = true;
-                closeAdminModal();
-                document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
-                document.querySelectorAll('nav .nav-btn').forEach(b => b.classList.remove('active'));
-                document.getElementById('admin').classList.add('active');
-                document.getElementById('btn-admin').classList.add('active');
-                showAdminTab(document.querySelector('.adm-tab-btn'), 'adm-home');
-            } else {
-                document.getElementById('admin-pw-error').style.display = 'block';
-                document.getElementById('admin-pw-input').classList.add('shake');
-                setTimeout(() => document.getElementById('admin-pw-input').classList.remove('shake'), 500);
-            }
-        };
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && document.getElementById('admin-modal').classList.contains('open')) tryAdminLogin();
+            if (e.key === 'Enter' && document.getElementById('admin-modal').classList.contains('open')) window.tryAdminLogin();
         });
-        window.showAdminTab = (btn, tabId) => {
-            document.querySelectorAll('.adm-tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.adm-tab-content').forEach(t => t.classList.remove('active'));
-            if (btn) btn.classList.add('active');
-            document.getElementById(tabId).classList.add('active');
-        };
 
         onValue(ref(db, 'class306'), (snapshot) => {
             globalData = snapshot.val() || {};
@@ -160,31 +207,6 @@
             }
         }
 
-        window.previewCertPhoto = (input) => {
-            const file = input.files[0];
-            if (!file) return;
-            const preview = document.getElementById('cert-preview');
-            const placeholder = document.getElementById('cert-placeholder');
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                preview.src = e.target.result;
-                preview.style.display = 'block';
-                placeholder.style.display = 'none';
-            };
-            reader.readAsDataURL(file);
-        };
-
-        window.triggerCamera = () => {
-            const input = document.getElementById('cert-file-input');
-            input.setAttribute('capture', 'environment');
-            input.click();
-        };
-        window.triggerGallery = () => {
-            const input = document.getElementById('cert-file-input');
-            input.removeAttribute('capture');
-            input.click();
-        };
-
         function getTodayCertCount(name) {
             const todayStr = new Date().toISOString().slice(0, 10);
             const certs = globalData.studyCert || {};
@@ -199,13 +221,13 @@
             const studyContent = document.getElementById('cert-study-content').value.trim();
             const btn = document.getElementById('cert-submit-btn');
 
-            if (!name) return showToast("이름을 선택해주세요.", 'error');
-            if (!file) return showToast("사진을 선택해주세요.", 'error');
-            if (!studyContent) return showToast("무엇을 공부했는지 입력해주세요.", 'error');
+            if (!name) return window.showToast("이름을 선택해주세요.", 'error');
+            if (!file) return window.showToast("사진을 선택해주세요.", 'error');
+            if (!studyContent) return window.showToast("무엇을 공부했는지 입력해주세요.", 'error');
 
             const todayCount = getTodayCertCount(name);
             if (todayCount >= MAX_DAILY_CERT) {
-                return showToast(`오늘은 이미 체크했어요! 내일 또 해요 😊`, 'error');
+                return window.showToast(`오늘은 이미 체크했어요! 내일 또 해요 😊`, 'error');
             }
 
             btn.disabled = true;
@@ -318,7 +340,7 @@
                     await set(ref(db, `class306/mileage/${name}`), before + CERT_MILEAGE);
                     await set(ref(db, `class306/totalEarned/${name}`), afterEarned);
                     if (getLevel(beforeEarned).level < getLevel(afterEarned).level) {
-                        setTimeout(() => showToast(`🎉 ${name} 레벨업! Lv.${getLevel(afterEarned).level}`, 'levelup'), 1200);
+                        setTimeout(() => window.showToast(`🎉 ${name} 레벨업! Lv.${getLevel(afterEarned).level}`, 'levelup'), 1200);
                     }
                 }
 
@@ -326,7 +348,7 @@
 
             } catch(err) {
                 console.error(err);
-                showToast("오류가 발생했어요. 잠시 후 다시 시도해주세요.", 'error');
+                window.showToast("오류가 발생했어요. 잠시 후 다시 시도해주세요.", 'error');
             } finally {
                 btn.disabled = false;
                 btn.innerText = "스터디 체크하기 📚";
@@ -441,18 +463,18 @@
             if (result === 'pass' && mileage > 0) {
                 get(ref(db, `class306/mileage/${name}`)).then(s => {
                     set(ref(db, `class306/mileage/${name}`), Math.max(0, (s.val() || 0) - mileage));
-                    showToast(`삭제 완료! ${name} -${mileage}P 차감`);
+                    window.showToast(`삭제 완료! ${name} -${mileage}P 차감`);
                 });
             } else {
-                showToast("삭제되었습니다.");
+                window.showToast("삭제되었습니다.");
             }
         };
 
         window.saveApiKey = () => {
             const key = document.getElementById('adm-api-key-input').value.trim();
-            if (!key) return showToast("API 키를 입력하세요.", 'error');
+            if (!key) return window.showToast("API 키를 입력하세요.", 'error');
             update(ref(db, 'class306/config'), { claudeApiKey: key });
-            showToast("API 키가 저장되었습니다!");
+            window.showToast("API 키가 저장되었습니다!");
         };
 
         function renderHome(calObj) {
@@ -629,24 +651,24 @@
             const from = document.getElementById('p-from').value;
             const to = document.getElementById('p-to').value;
             const content = document.getElementById('p-content').value.trim();
-            if (!from || !to || !content) return showToast("빈칸을 채워주세요.", 'error');
-            if (from === to) return showToast("자기 자신은 칭찬할 수 없어요!", 'error');
+            if (!from || !to || !content) return window.showToast("빈칸을 채워주세요.", 'error');
+            if (from === to) return window.showToast("자기 자신은 칭찬할 수 없어요!", 'error');
             push(ref(db, 'class306/praise'), { from, to, content, approved: false, time: new Date().toLocaleString('ko-KR') });
             document.getElementById('p-from').value = '';
             document.getElementById('p-to').value = '';
             document.getElementById('p-content').value = '';
-            showToast("제보 완료! 선생님 승인 후 공개돼요 😊");
+            window.showToast("제보 완료! 선생님 승인 후 공개돼요 😊");
         };
 
         window.submitToday = () => {
             const name = document.getElementById('t-name').value;
             const content = document.getElementById('t-content').value.trim();
             const q = document.getElementById('daily-q-text').innerText;
-            if (!name || !content) return showToast("내용을 입력하세요.", 'error');
+            if (!name || !content) return window.showToast("내용을 입력하세요.", 'error');
             push(ref(db, 'class306/impression'), { name, content, question: q, date: new Date().toLocaleDateString('ko-KR'), approved: false, time: new Date().toLocaleString('ko-KR') });
             document.getElementById('t-name').value = '';
             document.getElementById('t-content').value = '';
-            showToast("기록 완료! 선생님 승인 후 공개돼요 😊");
+            window.showToast("기록 완료! 선생님 승인 후 공개돼요 😊");
         };
 
         function renderAdminHome(calObj) {
@@ -670,11 +692,11 @@
         window.addCal = () => {
             const date = document.getElementById('adm-cal-date').value;
             const title = document.getElementById('adm-cal-title').value.trim();
-            if (!date || !title) return showToast("날짜와 제목을 입력하세요.", 'error');
+            if (!date || !title) return window.showToast("날짜와 제목을 입력하세요.", 'error');
             push(ref(db, 'class306/calendar'), { date, title });
             document.getElementById('adm-cal-date').value = '';
             document.getElementById('adm-cal-title').value = '';
-            showToast("일정이 등록되었습니다!");
+            window.showToast("일정이 등록되었습니다!");
         };
         window.deleteCal = (id) => {
             if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db, `class306/calendar/${id}`));
@@ -750,10 +772,6 @@
             }
         }
 
-        window.toggleAllStudents = (type) => {
-            document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => { cb.checked = type === 'all'; });
-        };
-
         window.doMileageAdd = () => {
             const sel = document.getElementById('adm-reason-select');
             const scoreEl = document.getElementById('adm-add-score');
@@ -761,9 +779,9 @@
             const reason = sel.value === '__other__' ? customEl.value.trim() : sel.value;
             const score = parseInt(scoreEl.value);
             const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
-            if (!reason) return showToast("사유를 선택하거나 입력하세요.", 'error');
-            if (isNaN(score) || score <= 0) return showToast("점수를 확인하세요.", 'error');
-            if (checked.length === 0) return showToast("학생을 한 명 이상 선택하세요.", 'error');
+            if (!reason) return window.showToast("사유를 선택하거나 입력하세요.", 'error');
+            if (isNaN(score) || score <= 0) return window.showToast("점수를 확인하세요.", 'error');
+            if (checked.length === 0) return window.showToast("학생을 한 명 이상 선택하세요.", 'error');
             if (!confirm(`${checked.join(', ')}에게 [${reason}] ${score}P 적립할까요?`)) return;
             Promise.all([
                 get(ref(db, 'class306/mileage')),
@@ -790,9 +808,9 @@
                 customEl.style.display = 'none'; customEl.value = '';
                 if (levelUps.length > 0) {
                     const names = levelUps.map(l => `${l.name}(Lv.${l.lv})`).join(', ');
-                    showToast(`🎉 레벨업! ${names}`, 'levelup');
+                    window.showToast(`🎉 레벨업! ${names}`, 'levelup');
                 } else {
-                    showToast(`${checked.length}명 +${score}P 적립 완료!`);
+                    window.showToast(`${checked.length}명 +${score}P 적립 완료!`);
                 }
             });
         };
@@ -801,8 +819,8 @@
             const scoreEl = document.getElementById('adm-sub-score');
             const score = parseInt(scoreEl.value);
             const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
-            if (isNaN(score) || score <= 0) return showToast("차감 점수를 입력하세요.", 'error');
-            if (checked.length === 0) return showToast("학생을 선택하세요.", 'error');
+            if (isNaN(score) || score <= 0) return window.showToast("차감 점수를 입력하세요.", 'error');
+            if (checked.length === 0) return window.showToast("학생을 선택하세요.", 'error');
             if (!confirm(`${checked.join(', ')}에서 ${score}P 차감할까요?`)) return;
             get(ref(db, 'class306/mileage')).then(snap => {
                 const cur = snap.val() || {};
@@ -811,7 +829,7 @@
                 update(ref(db, 'class306/mileage'), updates);
                 document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
                 scoreEl.value = '';
-                showToast(`${checked.length}명 -${score}P 차감 완료!`);
+                window.showToast(`${checked.length}명 -${score}P 차감 완료!`);
             });
         };
 
@@ -824,7 +842,7 @@
                 document.getElementById(id).dataset.dirty = '';
             });
             updateReasonDropdowns();
-            showToast("설정이 저장되었습니다!");
+            window.showToast("설정이 저장되었습니다!");
         };
 
         function renderAdminPraise(praiseObj) {
@@ -869,11 +887,11 @@
                     [from]: (earned[from] || cur[from] || 0) + 1,
                     [to]: (earned[to] || cur[to] || 0) + 2
                 });
-                showToast(`승인 완료! ${from}+1P, ${to}+2P 적립`);
+                window.showToast(`승인 완료! ${from}+1P, ${to}+2P 적립`);
             });
         };
         window.deletePraise = (id) => {
-            if (confirm("이 제보를 거절/삭제하시겠습니까?")) { remove(ref(db, `class306/praise/${id}`)); showToast("삭제되었습니다."); }
+            if (confirm("이 제보를 거절/삭제하시겠습니까?")) { remove(ref(db, `class306/praise/${id}`)); window.showToast("삭제되었습니다."); }
         };
         window.deletePraiseWithMileage = (id, from, to) => {
             if (!confirm(`삭제 시 ${from}(-1P), ${to}(-2P) 차감됩니다. 삭제하시겠습니까?`)) return;
@@ -881,7 +899,7 @@
             get(ref(db, 'class306/mileage')).then(snap => {
                 const cur = snap.val() || {};
                 update(ref(db, 'class306/mileage'), { [from]: Math.max(0, (cur[from] || 0) - 1), [to]: Math.max(0, (cur[to] || 0) - 2) });
-                showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
+                window.showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
             });
         };
 
@@ -926,39 +944,32 @@
                 const earned = eSnap.val() || cur;
                 set(ref(db, `class306/mileage/${name}`), cur + 1);
                 set(ref(db, `class306/totalEarned/${name}`), earned + 1);
-                showToast(`승인 완료! ${name}+1P 적립`);
+                window.showToast(`승인 완료! ${name}+1P 적립`);
             });
         };
         window.deleteToday = (id) => {
-            if (confirm("이 기록을 삭제하시겠습니까?")) { remove(ref(db, `class306/impression/${id}`)); showToast("삭제되었습니다."); }
+            if (confirm("이 기록을 삭제하시겠습니까?")) { remove(ref(db, `class306/impression/${id}`)); window.showToast("삭제되었습니다."); }
         };
         window.deleteTodayWithMileage = (id, name) => {
             if (!confirm(`삭제 시 ${name}(-1P) 차감됩니다. 삭제하시겠습니까?`)) return;
             remove(ref(db, `class306/impression/${id}`));
             get(ref(db, `class306/mileage/${name}`)).then(s => {
                 set(ref(db, `class306/mileage/${name}`), Math.max(0, (s.val() || 0) - 1));
-                showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
+                window.showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
             });
         };
         window.updateManualQ = () => {
             const q = document.getElementById('adm-q-input').value.trim();
-            if (!q) return showToast("질문을 입력하세요.", 'error');
+            if (!q) return window.showToast("질문을 입력하세요.", 'error');
             const dateStr = new Date().toISOString().slice(0, 10);
             update(ref(db, 'class306/config'), { manualQuestion: q, manualQuestionDate: dateStr });
-            showToast("오늘의 질문이 변경되었습니다!");
+            window.showToast("오늘의 질문이 변경되었습니다!");
         };
         window.syncClass = () => {
             studentList.forEach(name => set(ref(db, `class306/students/${name}`), true));
-            showToast("학생 명단 동기화 완료!");
+            window.showToast("학생 명단 동기화 완료!");
         };
 
-        window.showToast = (msg, type = 'success') => {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.className = 'toast show ' + type;
-            clearTimeout(t._timer);
-            t._timer = setTimeout(() => t.classList.remove('show'), 3000);
-        };
         window.sortPraise = (btn, sortBy) => {
             document.querySelectorAll('.praise-sort-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1023,6 +1034,8 @@
             display: flex; gap: 8px; margin: 0 16px 20px; flex-wrap: wrap; 
             justify-content: center; max-width: var(--max-w); width: 100%; 
         }
+        
+        /* 버튼 공통 스타일 (스터디체크만 색상 다르던 부분 완벽 수정) */
         .nav-btn { 
             padding: 12px 18px; border: 1px solid rgba(45, 212, 191, 0.2); border-radius: 16px; background: white; 
             box-shadow: var(--shadow); cursor: pointer; font-weight: 700; color: var(--text-sub); 
@@ -1030,9 +1043,6 @@
         }
         .nav-btn.active { background: var(--text); color: white; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .nav-btn:hover:not(.active) { transform: translateY(-2px); }
-        .nav-btn.admin-btn { color: var(--primary); font-size: 1.2rem; padding: 10px 14px; }
-        .nav-btn.study-btn { color: var(--study); }
-        .nav-btn.study-btn.active { background: var(--grad-study); color: white; }
 
         .class-total-banner { 
             width: calc(100% - 32px); max-width: var(--max-w); 
@@ -1240,7 +1250,7 @@
 <body>
 
 <!-- 관리자 로그인 모달 -->
-<div id="admin-modal" class="modal-overlay" onclick="if(event.target===this) closeAdminModal()">
+<div id="admin-modal" class="modal-overlay" onclick="if(event.target===this) window.closeAdminModal()">
     <div class="modal-box">
         <div class="modal-lock">🔐</div>
         <h2>관리자 전용</h2>
@@ -1250,8 +1260,8 @@
         </div>
         <div id="admin-pw-error">비밀번호가 틀렸습니다 😢</div>
         <div class="modal-btn-row">
-            <button class="btn-cancel" onclick="closeAdminModal()">취소</button>
-            <button class="btn-confirm" onclick="tryAdminLogin()">확인</button>
+            <button class="btn-cancel" onclick="window.closeAdminModal()">취소</button>
+            <button class="btn-confirm" onclick="window.tryAdminLogin()">확인</button>
         </div>
     </div>
 </div>
@@ -1261,12 +1271,12 @@
 <header><h1>INTO THE 306 WORLD</h1></header>
 
 <nav>
-    <button class="nav-btn active" onclick="showSection('home')" id="btn-home">🏠 홈</button>
-    <button class="nav-btn" onclick="showSection('mileage')" id="btn-mileage">⭐ 마일리지</button>
-    <button class="nav-btn study-btn" onclick="showSection('study')" id="btn-study">📚 스터디 체크</button>
-    <button class="nav-btn" onclick="showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
-    <button class="nav-btn" onclick="showSection('today')" id="btn-today">✏️ 오늘 하루</button>
-    <button class="nav-btn admin-btn" onclick="showSection('admin')" id="btn-admin">⚙️</button>
+    <button class="nav-btn active" onclick="window.showSection('home')" id="btn-home">🏠 홈</button>
+    <button class="nav-btn" onclick="window.showSection('mileage')" id="btn-mileage">⭐ 마일리지</button>
+    <button class="nav-btn" onclick="window.showSection('study')" id="btn-study">📚 스터디 체크</button>
+    <button class="nav-btn" onclick="window.showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
+    <button class="nav-btn" onclick="window.showSection('today')" id="btn-today">✏️ 오늘 하루</button>
+    <button class="nav-btn" onclick="window.showSection('admin')" id="btn-admin">⚙️</button>
 </nav>
 
 <div class="class-total-banner">
@@ -1298,8 +1308,8 @@
 <!-- ========== 마일리지 ========== -->
 <section id="mileage" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab(this,'mileage','m-guide')">적립 및 보상</button>
-        <button onclick="showSubTab(this,'mileage','m-view')">실시간 랭킹</button>
+        <button class="active" onclick="window.showSubTab(this,'mileage','m-guide')">적립 및 보상</button>
+        <button onclick="window.showSubTab(this,'mileage','m-view')">실시간 랭킹</button>
     </div>
     <div id="m-guide" class="tab-content active">
         <div class="glass-card">
@@ -1319,8 +1329,8 @@
 <!-- ========== 스터디 체크 ========== -->
 <section id="study" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab(this,'study','s-upload')">체크하기</button>
-        <button onclick="showSubTab(this,'study','s-history')">체크 내역</button>
+        <button class="active" onclick="window.showSubTab(this,'study','s-upload')">체크하기</button>
+        <button onclick="window.showSubTab(this,'study','s-history')">체크 내역</button>
     </div>
 
     <div id="s-upload" class="tab-content active">
@@ -1338,16 +1348,16 @@
                 </div>
                 <img id="cert-preview" src="" alt="미리보기">
             </div>
-            <input type="file" id="cert-file-input" accept="image/*" style="display:none" onchange="previewCertPhoto(this)">
+            <input type="file" id="cert-file-input" accept="image/*" style="display:none" onchange="window.previewCertPhoto(this)">
 
             <div class="cert-btn-row">
-                <button class="btn-cam" onclick="triggerCamera()">📷 카메라 촬영</button>
-                <button class="btn-gallery" onclick="triggerGallery()">🖼️ 갤러리 선택</button>
+                <button class="btn-cam" onclick="window.triggerCamera()">📷 카메라 촬영</button>
+                <button class="btn-gallery" onclick="window.triggerGallery()">🖼️ 갤러리 선택</button>
             </div>
 
             <textarea id="cert-study-content" rows="2" placeholder="무엇을 공부했나요? (예: 수학 미적분, 영어 단어 암기)"></textarea>
 
-            <button class="btn-study-main" id="cert-submit-btn" onclick="submitStudyCert()">스터디 체크하기 📚</button>
+            <button class="btn-study-main" id="cert-submit-btn" onclick="window.submitStudyCert()">스터디 체크하기 📚</button>
 
             <div id="cert-result-box" class="cert-result-box" style="display:none;">
                 <span id="cert-result-emoji" class="cert-result-emoji"></span>
@@ -1369,8 +1379,8 @@
 <!-- ========== 칭찬감옥 ========== -->
 <section id="praise" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab(this,'praise','p-form')">제보하기</button>
-        <button onclick="showSubTab(this,'praise','p-list')">모아보기</button>
+        <button class="active" onclick="window.showSubTab(this,'praise','p-form')">제보하기</button>
+        <button onclick="window.showSubTab(this,'praise','p-list')">모아보기</button>
     </div>
     <div id="p-form" class="tab-content active">
         <div class="glass-card">
@@ -1378,13 +1388,13 @@
             <select id="p-from"><option value="">제보자 선택</option></select>
             <select id="p-to"><option value="">칭찬 주인공 선택</option></select>
             <textarea id="p-content" rows="3" placeholder="칭찬 내용을 적어주세요!"></textarea>
-            <button class="btn-main" onclick="submitPraise()">제보하기 ✉️</button>
+            <button class="btn-main" onclick="window.submitPraise()">제보하기 ✉️</button>
         </div>
     </div>
     <div id="p-list" class="tab-content">
         <div class="sort-bar">
-            <button class="praise-sort-btn active" onclick="sortPraise(this,'date')">📅 날짜별</button>
-            <button class="praise-sort-btn" onclick="sortPraise(this,'name')">👤 학생별</button>
+            <button class="praise-sort-btn active" onclick="window.sortPraise(this,'date')">📅 날짜별</button>
+            <button class="praise-sort-btn" onclick="window.sortPraise(this,'name')">👤 학생별</button>
         </div>
         <div id="praise-view-list"></div>
     </div>
@@ -1393,8 +1403,8 @@
 <!-- ========== 오늘 하루 ========== -->
 <section id="today" class="content-section">
     <div class="sub-nav">
-        <button class="active" onclick="showSubTab(this,'today','t-form')">오늘의 질문</button>
-        <button onclick="showSubTab(this,'today','t-list')">모아보기</button>
+        <button class="active" onclick="window.showSubTab(this,'today','t-form')">오늘의 질문</button>
+        <button onclick="window.showSubTab(this,'today','t-list')">모아보기</button>
     </div>
     <div id="t-form" class="tab-content active">
         <div class="glass-card">
@@ -1403,14 +1413,14 @@
             <div id="t-submit-area">
                 <select id="t-name"><option value="">이름 선택</option></select>
                 <textarea id="t-content" rows="3" placeholder="오늘의 생각을 기록하세요 ✏️"></textarea>
-                <button class="btn-main" onclick="submitToday()">기록하기</button>
+                <button class="btn-main" onclick="window.submitToday()">기록하기</button>
             </div>
         </div>
     </div>
     <div id="t-list" class="tab-content">
         <div class="sort-bar">
-            <button class="today-sort-btn active" onclick="sortToday(this,'date')">📅 날짜별</button>
-            <button class="today-sort-btn" onclick="sortToday(this,'name')">👤 이름순</button>
+            <button class="today-sort-btn active" onclick="window.sortToday(this,'date')">📅 날짜별</button>
+            <button class="today-sort-btn" onclick="window.sortToday(this,'name')">👤 이름순</button>
         </div>
         <div id="today-view-list"></div>
     </div>
@@ -1419,11 +1429,11 @@
 <!-- ========== 관리자 ========== -->
 <section id="admin" class="content-section">
     <div class="adm-tab-nav">
-        <button class="adm-tab-btn active" onclick="showAdminTab(this,'adm-home')">홈</button>
-        <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-mileage')">마일리지</button>
-        <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-praise')">칭찬감옥</button>
-        <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-today')">오늘하루</button>
-        <button class="adm-tab-btn" onclick="showAdminTab(this,'adm-cert')">스터디 체크</button>
+        <button class="adm-tab-btn active" onclick="window.showAdminTab(this,'adm-home')">홈</button>
+        <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-mileage')">마일리지</button>
+        <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-praise')">칭찬감옥</button>
+        <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-today')">오늘하루</button>
+        <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-cert')">스터디 체크</button>
     </div>
 
     <!-- 관리자 홈 -->
@@ -1435,11 +1445,11 @@
                 <div class="adm-cal-add">
                     <input type="date" id="adm-cal-date" style="flex:1; margin-bottom:0">
                     <input type="text" id="adm-cal-title" placeholder="일정 제목" style="flex:2; margin-bottom:0">
-                    <button class="btn-approve" onclick="addCal()" style="white-space:nowrap; padding:14px 18px;">추가</button>
+                    <button class="btn-approve" onclick="window.addCal()" style="white-space:nowrap; padding:14px 18px;">추가</button>
                 </div>
             </div>
             <div class="adm-section"><h4>등록된 일정</h4><div id="adm-cal-list"></div></div>
-            <div class="adm-section"><h4>⚙️ 시스템</h4><button class="btn-approve" onclick="syncClass()" style="width:100%; padding:14px;">학생 명단 동기화</button></div>
+            <div class="adm-section"><h4>⚙️ 시스템</h4><button class="btn-approve" onclick="window.syncClass()" style="width:100%; padding:14px;">학생 명단 동기화</button></div>
         </div>
     </div>
 
@@ -1455,26 +1465,26 @@
                 <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
                 <h4 style="margin-top:8px;">단체 보상 설정</h4>
                 <textarea id="adm-group-rewards-input" rows="3" placeholder="3,000P: 학급 파티"></textarea>
-                <button class="btn-main" onclick="saveConfig()">설정 저장</button>
+                <button class="btn-main" onclick="window.saveConfig()">설정 저장</button>
             </div>
             <div class="adm-section">
                 <h4>마일리지 적립/차감</h4>
-                <select id="adm-reason-select" onchange="onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')"><option value="">적립 사유 선택</option></select>
+                <select id="adm-reason-select" onchange="window.onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')"><option value="">적립 사유 선택</option></select>
                 <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
                 <div style="display:flex; gap:10px; margin-bottom:14px; align-items:center;">
                     <input type="number" id="adm-add-score" placeholder="점수" style="flex:1; margin-bottom:0; min-width:0;">
                     <span style="font-size:0.9rem; font-weight:700; color:var(--text-sub); white-space:nowrap;">P 적립</span>
                 </div>
                 <div style="display:flex; gap:10px; margin-bottom:10px;">
-                    <button class="btn-sel-all" onclick="toggleAllStudents('all')">전체 선택</button>
-                    <button class="btn-sel-all" onclick="toggleAllStudents('none')">전체 해제</button>
+                    <button class="btn-sel-all" onclick="window.toggleAllStudents('all')">전체 선택</button>
+                    <button class="btn-sel-all" onclick="window.toggleAllStudents('none')">전체 해제</button>
                 </div>
                 <div id="adm-mileage-list" class="student-check-list"></div>
                 <div style="display:flex; gap:10px; margin-top:16px;">
-                    <button class="btn-main" onclick="doMileageAdd()" style="flex:2;">✅ 적립하기</button>
+                    <button class="btn-main" onclick="window.doMileageAdd()" style="flex:2;">✅ 적립하기</button>
                     <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
                         <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0; font-size:0.85rem; padding:10px;">
-                        <button class="btn-danger-sm" style="width:100%; padding:10px;" onclick="doMileageSub()">차감하기</button>
+                        <button class="btn-danger-sm" style="width:100%; padding:10px;" onclick="window.doMileageSub()">차감하기</button>
                     </div>
                 </div>
             </div>
@@ -1497,7 +1507,7 @@
             <div class="adm-section">
                 <h4>오늘의 질문 수동 변경</h4>
                 <input type="text" id="adm-q-input" placeholder="질문 직접 입력 (비워두면 자동 생성)">
-                <button class="btn-main" onclick="updateManualQ()">오늘 질문 변경</button>
+                <button class="btn-main" onclick="window.updateManualQ()">오늘 질문 변경</button>
             </div>
             <div class="adm-section"><h4>⏳ 승인 대기</h4><div id="adm-today-pending"></div></div>
             <div class="adm-section"><h4>✅ 승인된 기록</h4><div id="adm-today-approved"></div></div>
@@ -1515,7 +1525,7 @@
                     코드 상단 <code>CLAUDE_API_KEY</code> 변수에도 직접 입력 가능합니다.
                 </p>
                 <input type="text" id="adm-api-key-input" placeholder="sk-ant-...">
-                <button class="btn-main" style="background:var(--study);" onclick="saveApiKey()">API 키 저장</button>
+                <button class="btn-main" style="background:var(--study);" onclick="window.saveApiKey()">API 키 저장</button>
             </div>
             <div class="adm-section">
                 <h4>📊 체크 통계</h4>
