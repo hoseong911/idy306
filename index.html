@@ -448,7 +448,7 @@
                         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
                             <span style="font-weight:800;color:var(--primary);font-size:0.85rem;">${c.result === 'pass' ? '+' + c.mileage + 'P' : '-'}</span>
                             ${c.photoURL ? `<a href="${c.photoURL}" target="_blank" style="font-size:0.75rem;color:#888;">사진보기</a>` : ''}
-                            <button class="btn-danger-sm" onclick="deleteCertRecord('${id}', '${c.name}', ${c.mileage || 0}, '${c.result}')">삭제</button>
+                            <button class="btn-danger-sm" onclick="window.deleteCertRecord('${id}', '${c.name}', ${c.mileage || 0}, '${c.result}')">삭제</button>
                         </div>
                     </div>`;
             });
@@ -684,7 +684,7 @@
                             <span class="adm-cal-date">${c.date.slice(5)}</span>
                             <span class="adm-cal-title">${c.title}</span>
                         </div>
-                        <button class="btn-danger-sm" onclick="deleteCal('${id}')">삭제</button>
+                        <button class="btn-danger-sm" onclick="window.deleteCal('${id}')">삭제</button>
                     </div>`;
             });
         }
@@ -859,8 +859,8 @@
                     <div class="adm-praise-item">
                         <div class="adm-praise-info"><b>${p.from} → ${p.to}</b><p>${p.content}</p><small>${p.time}</small></div>
                         <div class="adm-praise-actions">
-                            <button class="btn-approve" onclick="approvePraise('${id}','${p.from}','${p.to}')">승인</button>
-                            <button class="btn-danger-sm" onclick="deletePraise('${id}')">거절</button>
+                            <button class="btn-approve" onclick="window.approvePraise('${id}','${p.from}','${p.to}')">승인</button>
+                            <button class="btn-danger-sm" onclick="window.deletePraise('${id}')">거절</button>
                         </div>
                     </div>`;
             });
@@ -869,7 +869,7 @@
                 approvedEl.innerHTML += `
                     <div class="adm-praise-item">
                         <div class="adm-praise-info"><b>${p.from} → ${p.to}</b><p>${p.content}</p></div>
-                        <button class="btn-danger-sm" onclick="deletePraiseWithMileage('${id}','${p.from}','${p.to}')">삭제</button>
+                        <button class="btn-danger-sm" onclick="window.deletePraiseWithMileage('${id}','${p.from}','${p.to}')">삭제</button>
                     </div>`;
             });
         }
@@ -917,8 +917,8 @@
                     <div class="adm-praise-item">
                         <div class="adm-praise-info"><b>${i.name}</b> · ${i.date}<p>${i.content}</p></div>
                         <div class="adm-praise-actions">
-                            <button class="btn-approve" onclick="approveToday('${id}','${i.name}')">승인</button>
-                            <button class="btn-danger-sm" onclick="deleteToday('${id}')">삭제</button>
+                            <button class="btn-approve" onclick="window.approveToday('${id}','${i.name}')">승인</button>
+                            <button class="btn-danger-sm" onclick="window.deleteToday('${id}')">삭제</button>
                         </div>
                     </div>`;
             });
@@ -927,7 +927,7 @@
                 approvedEl.innerHTML += `
                     <div class="adm-praise-item">
                         <div class="adm-praise-info"><b>${i.name}</b> · ${i.date}<p>${i.content}</p></div>
-                        <button class="btn-danger-sm" onclick="deleteTodayWithMileage('${id}','${i.name}')">삭제</button>
+                        <button class="btn-danger-sm" onclick="window.deleteTodayWithMileage('${id}','${i.name}')">삭제</button>
                     </div>`;
             });
             const qInput = document.getElementById('adm-q-input');
@@ -1276,7 +1276,7 @@
     <button class="nav-btn" onclick="window.showSection('study')" id="btn-study">📚 스터디 체크</button>
     <button class="nav-btn" onclick="window.showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
     <button class="nav-btn" onclick="window.showSection('today')" id="btn-today">✏️ 오늘 하루</button>
-    <button class="nav-btn" onclick="window.showSection('admin')" id="btn-admin">⚙️</button>
+    <button class="nav-btn admin-btn" onclick="window.showSection('admin')" id="btn-admin">⚙️</button>
 </nav>
 
 <div class="class-total-banner">
