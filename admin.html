@@ -63,7 +63,6 @@
 
         let globalData = {};
         let studentList = []; 
-        let editingStudentKey = null;
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && document.getElementById('admin-modal').classList.contains('open')) window.tryAdminLogin();
@@ -72,13 +71,12 @@
         onValue(ref(db, 'class306'), (snapshot) => {
             globalData = snapshot.val() || {};
             
-            // 학생 리스트 연동
+            // 학생 리스트 연동 (DB에 저장된 이름만 추출하여 리스트 생성)
+            studentList = [];
             if (globalData.students) {
                 studentList = Object.values(globalData.students)
                                     .sort((a, b) => a.num - b.num)
                                     .map(s => `${s.num} ${s.name}`);
-            } else {
-                studentList = [];
             }
 
             renderAdminStudents(globalData.students || {});
@@ -94,33 +92,28 @@
             const num = parseInt(document.getElementById('adm-std-num').value);
             const name = document.getElementById('adm-std-name').value.trim();
             if (!num || !name) return window.showToast('번호와 이름을 모두 입력하세요.', 'error');
+            if (num < 1 || num > 27) return window.showToast('번호는 1번부터 27번 사이여야 합니다.', 'error');
 
-            const key = `${num} ${name}`;
-
-            if (editingStudentKey && editingStudentKey !== key) {
-                remove(ref(db, `class306/students/${editingStudentKey}`));
-            }
-
-            set(ref(db, `class306/students/${key}`), { num, name });
-            window.showToast('학생 정보가 저장되었습니다!');
+            // DB 경로를 학생 번호 자체로 사용하여 덮어쓰기 용이하게 구성
+            set(ref(db, `class306/students/${num}`), { num, name });
+            window.showToast(`${num}번 ${name} 저장 완료!`);
             
             document.getElementById('adm-std-num').value = '';
             document.getElementById('adm-std-name').value = '';
-            document.getElementById('adm-std-btn').innerText = '추가';
-            editingStudentKey = null;
+            document.getElementById('adm-std-btn').innerText = '저장';
         };
 
         window.editStudent = (num, name) => {
             document.getElementById('adm-std-num').value = num;
             document.getElementById('adm-std-name').value = name;
             document.getElementById('adm-std-btn').innerText = '수정 완료';
-            editingStudentKey = `${num} ${name}`;
+            document.getElementById('adm-std-name').focus();
         };
 
         window.deleteStudent = (num, name) => {
-            if (confirm(`[${num} ${name}] 학생을 명단에서 삭제하시겠습니까?\n(기존 작성된 마일리지, 칭찬 데이터는 유지됩니다)`)) {
-                remove(ref(db, `class306/students/${num} ${name}`));
-                window.showToast('삭제되었습니다.');
+            if (confirm(`[${num}번] ${name} 학생을 명단에서 지우시겠습니까?\n(빈칸으로 변경됩니다)`)) {
+                remove(ref(db, `class306/students/${num}`));
+                window.showToast('이름이 삭제(빈칸 처리)되었습니다.');
             }
         };
 
@@ -128,26 +121,27 @@
             const list = document.getElementById('adm-std-list');
             if (!list) return;
             list.innerHTML = '';
-            const sorted = Object.values(studentsObj).sort((a, b) => a.num - b.num);
-            
-            if (sorted.length === 0) {
-                list.innerHTML = "<p class='empty-msg'>등록된 학생이 없습니다.</p>";
-                return;
-            }
 
-            sorted.forEach(s => {
+            // 1~27번까지 고정 출력
+            const studentMap = {};
+            Object.values(studentsObj).forEach(s => {
+                studentMap[s.num] = s.name;
+            });
+
+            for (let i = 1; i <= 27; i++) {
+                const name = studentMap[i] || "";
                 list.innerHTML += `
                     <div class="adm-cal-item">
-                        <div class="adm-cal-info">
-                            <span class="adm-cal-date" style="width:30px;">${s.num}</span>
-                            <span class="adm-cal-title">${s.name}</span>
+                        <div class="adm-cal-info" style="flex:1;">
+                            <span class="adm-cal-date" style="width:30px; display:inline-block; text-align:center;">${i}</span>
+                            ${name ? `<span class="adm-cal-title" style="font-weight:800;">${name}</span>` : `<span style="color:#aaa; font-size:0.85rem;">(이름 없음)</span>`}
                         </div>
                         <div style="display:flex; gap:6px;">
-                            <button class="btn-approve" onclick="window.editStudent('${s.num}', '${s.name}')">수정</button>
-                            <button class="btn-danger-sm" onclick="window.deleteStudent('${s.num}', '${s.name}')">삭제</button>
+                            <button class="btn-approve" style="background:#64748B;" onclick="window.editStudent('${i}', '${name}')">수정</button>
+                            ${name ? `<button class="btn-danger-sm" onclick="window.deleteStudent('${i}', '${name}')">삭제</button>` : `<button class="btn-danger-sm" style="visibility:hidden;">삭제</button>`}
                         </div>
                     </div>`;
-            });
+            }
         }
         // ==========================================================
 
@@ -498,8 +492,9 @@
         .adm-tab-btn { flex: 1; padding: 12px 6px; border: none; border-radius: 14px; background: transparent; font-weight: 800; color: var(--text-sub); cursor: pointer; font-family: inherit; font-size: 0.85rem; transition: all 0.2s; min-width: 56px; }
         .adm-tab-btn.active { background: var(--text); color: white; }
 
-        .adm-tab-content { display: none; width: 100%; display: flex; justify-content: center; }
-        .adm-tab-content.active { display: block; width: 100%; }
+        /* 수정된 부분: display: flex가 none을 덮어쓰지 않도록 수정 */
+        .adm-tab-content { display: none; width: 100%; }
+        .adm-tab-content.active { display: block; }
         
         .adm-section { background: white; border-radius: 18px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); }
         .adm-section h4 { font-size: 1rem; font-weight: 800; color: var(--primary-dark); margin-bottom: 14px; }
@@ -581,36 +576,18 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- 탭 순서 변경: 홈이 첫 번째, 명단 관리가 두 번째 -->
 <div class="adm-tab-nav">
-    <button class="adm-tab-btn active" onclick="window.showAdminTab(this,'adm-students')">명단 관리</button>
-    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-home')">홈</button>
+    <button class="adm-tab-btn active" onclick="window.showAdminTab(this,'adm-home')">홈</button>
+    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-students')">명단 관리</button>
     <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-mileage')">마일리지</button>
     <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-praise')">칭찬감옥</button>
     <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-today')">오늘하루</button>
     <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-cert')">스터디 체크</button>
 </div>
 
-<!-- 1. 학생 명단 관리 탭 -->
-<div id="adm-students" class="adm-tab-content active">
-    <div class="glass-card">
-        <h2>👥 학생 명단 관리</h2>
-        <div class="adm-section">
-            <h4>명단 추가 및 수정</h4>
-            <div style="display:flex; gap:10px; align-items: flex-start;">
-                <input type="number" id="adm-std-num" placeholder="번호" style="width: 80px; margin-bottom: 0;">
-                <input type="text" id="adm-std-name" placeholder="이름" style="flex: 1; margin-bottom: 0;">
-                <button class="btn-main" id="adm-std-btn" onclick="window.saveStudent()" style="width: auto; padding: 14px 24px;">추가</button>
-            </div>
-        </div>
-        <div class="adm-section">
-            <h4>등록된 명단 목록</h4>
-            <div id="adm-std-list"></div>
-        </div>
-    </div>
-</div>
-
-<!-- 2. 관리자 홈 -->
-<div id="adm-home" class="adm-tab-content">
+<!-- 1. 관리자 홈 (첫 화면) -->
+<div id="adm-home" class="adm-tab-content active">
     <div class="glass-card">
         <h2>📅 일정 관리</h2>
         <div class="adm-section">
@@ -622,6 +599,25 @@
             </div>
         </div>
         <div class="adm-section"><h4>등록된 일정</h4><div id="adm-cal-list"></div></div>
+    </div>
+</div>
+
+<!-- 2. 학생 명단 관리 탭 -->
+<div id="adm-students" class="adm-tab-content">
+    <div class="glass-card">
+        <h2>👥 학생 명단 관리</h2>
+        <div class="adm-section">
+            <h4>명단 수정/저장</h4>
+            <div style="display:flex; gap:10px; align-items: flex-start;">
+                <input type="number" id="adm-std-num" placeholder="번호 (1~27)" style="width: 100px; margin-bottom: 0;" min="1" max="27">
+                <input type="text" id="adm-std-name" placeholder="이름 입력" style="flex: 1; margin-bottom: 0;">
+                <button class="btn-main" id="adm-std-btn" onclick="window.saveStudent()" style="width: auto; padding: 14px 24px;">저장</button>
+            </div>
+        </div>
+        <div class="adm-section">
+            <h4>학급 명단 (1~27번)</h4>
+            <div id="adm-std-list"></div>
+        </div>
     </div>
 </div>
 
