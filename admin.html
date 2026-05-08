@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>306 WORLD Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&display=swap" rel="stylesheet">
+    
+    <script>
+        window.adminLoggedIn = false;
+        window.ADMIN_PW = "1234";
+
+        window.tryAdminLogin = () => {
+            const pw = document.getElementById('admin-pw-input').value;
+            if (pw === window.ADMIN_PW) {
+                window.adminLoggedIn = true;
+                document.getElementById('admin-modal').classList.remove('open');
+            } else {
+                document.getElementById('admin-pw-error').style.display = 'block';
+                document.getElementById('admin-pw-input').classList.add('shake');
+                setTimeout(() => document.getElementById('admin-pw-input').classList.remove('shake'), 500);
+            }
+        };
+
+        window.showAdminTab = (btn, tabId) => {
+            document.querySelectorAll('.adm-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.adm-tab-content').forEach(t => t.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        };
+
+        window.showToast = (msg, type = 'success') => {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.className = 'toast show ' + type;
+            clearTimeout(t._timer);
+            t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+        };
+
+        window.toggleAllStudents = (type) => {
+            document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => { cb.checked = type === 'all'; });
+        };
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+        import { getDatabase, ref, set, push, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDAc5S87JK-LtXzk5-iTR9rt7RnHWnUXTQ",
+            authDomain: "ho0911seong-56638.firebaseapp.com",
+            databaseURL: "https://ho0911seong-56638-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "ho0911seong-56638",
+            storageBucket: "ho0911seong-56638.firebasestorage.app",
+            messagingSenderId: "994509567071",
+            appId: "1:994509567071:web:c75eb195e1f3fa40f557ea"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let globalData = {};
+        let studentList = []; 
+        let editingStudentKey = null;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && document.getElementById('admin-modal').classList.contains('open')) window.tryAdminLogin();
+        });
+
+        onValue(ref(db, 'class306'), (snapshot) => {
+            globalData = snapshot.val() || {};
+            
+            // 학생 리스트 연동
+            if (globalData.students) {
+                studentList = Object.values(globalData.students)
+                                    .sort((a, b) => a.num - b.num)
+                                    .map(s => `${s.num} ${s.name}`);
+            } else {
+                studentList = [];
+            }
+
+            renderAdminStudents(globalData.students || {});
+            renderAdminHome(globalData.calendar || {});
+            renderAdminMileage(globalData);
+            renderAdminPraise(globalData.praise || {});
+            renderAdminToday(globalData.impression || {});
+            renderAdminStudyCert(globalData.studyCert || {});
+        });
+
+        // ====================== 학생 명단 관리 ======================
+        window.saveStudent = () => {
+            const num = parseInt(document.getElementById('adm-std-num').value);
+            const name = document.getElementById('adm-std-name').value.trim();
+            if (!num || !name) return window.showToast('번호와 이름을 모두 입력하세요.', 'error');
+
+            const key = `${num} ${name}`;
+
+            if (editingStudentKey && editingStudentKey !== key) {
+                remove(ref(db, `class306/students/${editingStudentKey}`));
+            }
+
+            set(ref(db, `class306/students/${key}`), { num, name });
+            window.showToast('학생 정보가 저장되었습니다!');
+            
+            document.getElementById('adm-std-num').value = '';
+            document.getElementById('adm-std-name').value = '';
+            document.getElementById('adm-std-btn').innerText = '추가';
+            editingStudentKey = null;
+        };
+
+        window.editStudent = (num, name) => {
+            document.getElementById('adm-std-num').value = num;
+            document.getElementById('adm-std-name').value = name;
+            document.getElementById('adm-std-btn').innerText = '수정 완료';
+            editingStudentKey = `${num} ${name}`;
+        };
+
+        window.deleteStudent = (num, name) => {
+            if (confirm(`[${num} ${name}] 학생을 명단에서 삭제하시겠습니까?\n(기존 작성된 마일리지, 칭찬 데이터는 유지됩니다)`)) {
+                remove(ref(db, `class306/students/${num} ${name}`));
+                window.showToast('삭제되었습니다.');
+            }
+        };
+
+        function renderAdminStudents(studentsObj) {
+            const list = document.getElementById('adm-std-list');
+            if (!list) return;
+            list.innerHTML = '';
+            const sorted = Object.values(studentsObj).sort((a, b) => a.num - b.num);
+            
+            if (sorted.length === 0) {
+                list.innerHTML = "<p class='empty-msg'>등록된 학생이 없습니다.</p>";
+                return;
+            }
+
+            sorted.forEach(s => {
+                list.innerHTML += `
+                    <div class="adm-cal-item">
+                        <div class="adm-cal-info">
+                            <span class="adm-cal-date" style="width:30px;">${s.num}</span>
+                            <span class="adm-cal-title">${s.name}</span>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <button class="btn-approve" onclick="window.editStudent('${s.num}', '${s.name}')">수정</button>
+                            <button class="btn-danger-sm" onclick="window.deleteStudent('${s.num}', '${s.name}')">삭제</button>
+                        </div>
+                    </div>`;
+            });
+        }
+        // ==========================================================
+
+        function getLevel(score) {
+            let level = 1, required = 10, accumulated = 0;
+            while (score >= accumulated + required) { accumulated += required; level++; required += 10; }
+            return { level };
+        }
+
+        function renderAdminStudyCert(certObj) {
+            const container = document.getElementById('adm-cert-list');
+            if (!container) return;
+            container.innerHTML = '';
+            const certs = Object.entries(certObj).sort((a, b) => new Date(b[1].time) - new Date(a[1].time));
+
+            const totalPass = certs.filter(([,c]) => c.result === 'pass').length;
+            const totalFail = certs.filter(([,c]) => c.result === 'fail').length;
+            const totalMileage = certs.reduce((s, [,c]) => s + (c.mileage || 0), 0);
+            document.getElementById('adm-cert-stats').innerHTML =
+                `총 체크: <b>${certs.length}건</b> · 통과: <b>${totalPass}</b> · 반려: <b>${totalFail}</b> · 적립: <b>${totalMileage}P</b>`;
+
+            if (certs.length === 0) return container.innerHTML = "<p class='empty-msg'>체크 기록이 없습니다.</p>";
+            certs.slice(0, 50).forEach(([id, c]) => {
+                container.innerHTML += `
+                    <div class="adm-cert-item">
+                        <div class="adm-cert-info">
+                            <span class="cert-badge ${c.result}">${c.result === 'pass' ? '✅ 통과' : '❌ 반려'}</span>
+                            <b>${c.name}</b> · ${c.date}
+                            ${c.studyContent ? `<p style="color:var(--study);font-weight:700;">"${c.studyContent}"</p>` : ''}
+                            <p>${c.reason}${c.photoDate && c.photoDate !== '없음' ? ` (사진날짜: ${c.photoDate})` : ''}</p>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+                            <span style="font-weight:800;color:var(--primary);font-size:0.85rem;">${c.result === 'pass' ? '+' + c.mileage + 'P' : '-'}</span>
+                            ${c.photoURL ? `<a href="${c.photoURL}" target="_blank" style="font-size:0.75rem;color:#888;">사진보기</a>` : ''}
+                            <button class="btn-danger-sm" onclick="window.deleteCertRecord('${id}', '${c.name}', ${c.mileage || 0}, '${c.result}')">삭제</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        window.deleteCertRecord = (id, name, mileage, result) => {
+            const msg = result === 'pass' ? `이 기록을 삭제하면 ${name}(-${mileage}P) 차감됩니다. 삭제하시겠습니까?` : `이 체크 반려 기록을 삭제하시겠습니까?`;
+            if (!confirm(msg)) return;
+            remove(ref(db, `class306/studyCert/${id}`));
+            if (result === 'pass' && mileage > 0) {
+                get(ref(db, `class306/mileage/${name}`)).then(s => {
+                    set(ref(db, `class306/mileage/${name}`), Math.max(0, (s.val() || 0) - mileage));
+                    window.showToast(`삭제 완료! ${name} -${mileage}P 차감`);
+                });
+            } else {
+                window.showToast("삭제되었습니다.");
+            }
+        };
+
+        window.saveApiKey = () => {
+            const key = document.getElementById('adm-api-key-input').value.trim();
+            if (!key) return window.showToast("API 키를 입력하세요.", 'error');
+            update(ref(db, 'class306/config'), { claudeApiKey: key });
+            window.showToast("API 키가 저장되었습니다!");
+        };
+
+        function renderAdminHome(calObj) {
+            const list = document.getElementById('adm-cal-list');
+            if (!list) return;
+            list.innerHTML = '';
+            const sorted = Object.entries(calObj).sort((a, b) => new Date(a[1].date) - new Date(b[1].date));
+            if (sorted.length === 0) { list.innerHTML = "<p class='empty-msg'>등록된 일정이 없습니다.</p>"; return; }
+            sorted.forEach(([id, c]) => {
+                list.innerHTML += `
+                    <div class="adm-cal-item">
+                        <div class="adm-cal-info">
+                            <span class="adm-cal-date">${c.date.slice(5)}</span>
+                            <span class="adm-cal-title">${c.title}</span>
+                        </div>
+                        <button class="btn-danger-sm" onclick="window.deleteCal('${id}')">삭제</button>
+                    </div>`;
+            });
+        }
+
+        window.addCal = () => {
+            const date = document.getElementById('adm-cal-date').value;
+            const title = document.getElementById('adm-cal-title').value.trim();
+            if (!date || !title) return window.showToast("날짜와 제목을 입력하세요.", 'error');
+            push(ref(db, 'class306/calendar'), { date, title });
+            document.getElementById('adm-cal-date').value = '';
+            document.getElementById('adm-cal-title').value = '';
+            window.showToast("일정이 등록되었습니다!");
+        };
+        window.deleteCal = (id) => {
+            if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db, `class306/calendar/${id}`));
+        };
+
+        function parseReasons(text) {
+            const lines = (text || "").split('\n').map(l => l.trim()).filter(Boolean);
+            const result = [];
+            lines.forEach(line => {
+                const match = line.match(/^(.+?):\s*\+(\d+)P$/);
+                if (match) result.push({ label: match[1].trim(), score: parseInt(match[2]) });
+            });
+            return result;
+        }
+
+        function updateReasonDropdowns() {
+            const reasons = parseReasons(globalData.config?.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +2P");
+            const sel = document.getElementById('adm-reason-select');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">사유 선택</option>';
+            reasons.forEach(r => { sel.innerHTML += `<option value="${r.label}" data-score="${r.score}">${r.label} (+${r.score}P)</option>`; });
+            sel.innerHTML += '<option value="__other__">기타 (직접 입력)</option>';
+        }
+
+        window.onReasonChange = (selectId, scoreId, customId) => {
+            const sel = document.getElementById(selectId);
+            const scoreEl = document.getElementById(scoreId);
+            const customEl = document.getElementById(customId);
+            const chosen = sel.options[sel.selectedIndex];
+            if (sel.value === '__other__') {
+                customEl.style.display = 'block'; scoreEl.value = ''; scoreEl.readOnly = false;
+            } else if (sel.value) {
+                customEl.style.display = 'none'; scoreEl.value = chosen.dataset.score; scoreEl.readOnly = true;
+            } else {
+                customEl.style.display = 'none'; scoreEl.value = ''; scoreEl.readOnly = false;
+            }
+        };
+
+        function renderAdminMileage(data) {
+            const config = data.config || {};
+            const mileageObj = data.mileage || {};
+            
+            if (!document.getElementById('adm-reasons-input').dataset.dirty) document.getElementById('adm-reasons-input').value = config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +2P";
+            if (!document.getElementById('adm-personal-rewards-input').dataset.dirty) document.getElementById('adm-personal-rewards-input').value = config.personalRewards || "5P: 까까\n100P: 자리지정";
+            if (!document.getElementById('adm-group-rewards-input').dataset.dirty) document.getElementById('adm-group-rewards-input').value = config.groupRewards || "3,000P: 학급 파티";
+            updateReasonDropdowns();
+            
+            const listEl = document.getElementById('adm-mileage-list');
+            if (listEl) {
+                listEl.innerHTML = '';
+                const allScores = {};
+                studentList.forEach(name => { allScores[name] = mileageObj[name] || 0; });
+                const sorted = Object.entries(allScores).sort((a, b) => b[1] - a[1]);
+                sorted.forEach(([name, score]) => {
+                    listEl.innerHTML += `
+                        <div class="adm-mileage-item">
+                            <input type="checkbox" class="student-check" value="${name}" id="chk-${name}">
+                            <label for="chk-${name}" class="adm-m-name">${name}</label>
+                            <span class="adm-m-score">${score}P</span>
+                        </div>`;
+                });
+            }
+        }
+
+        window.doMileageAdd = () => {
+            const sel = document.getElementById('adm-reason-select');
+            const scoreEl = document.getElementById('adm-add-score');
+            const customEl = document.getElementById('adm-reason-custom');
+            const reason = sel.value === '__other__' ? customEl.value.trim() : sel.value;
+            const score = parseInt(scoreEl.value);
+            const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
+            
+            if (!reason) return window.showToast("사유를 선택하거나 입력하세요.", 'error');
+            if (isNaN(score) || score <= 0) return window.showToast("점수를 확인하세요.", 'error');
+            if (checked.length === 0) return window.showToast("학생을 한 명 이상 선택하세요.", 'error');
+            if (!confirm(`${checked.join(', ')}에게 [${reason}] ${score}P 적립할까요?`)) return;
+            
+            Promise.all([ get(ref(db, 'class306/mileage')), get(ref(db, 'class306/totalEarned')) ]).then(([mSnap, eSnap]) => {
+                const cur = mSnap.val() || {};
+                const earned = eSnap.val() || {};
+                const mUpdates = {}; const eUpdates = {}; const levelUps = [];
+                checked.forEach(name => {
+                    const beforeEarned = earned[name] || cur[name] || 0;
+                    const afterEarned = beforeEarned + score;
+                    mUpdates[name] = (cur[name] || 0) + score;
+                    eUpdates[name] = afterEarned;
+                    if (getLevel(beforeEarned).level < getLevel(afterEarned).level) levelUps.push({ name, lv: getLevel(afterEarned).level });
+                });
+                update(ref(db, 'class306/mileage'), mUpdates);
+                update(ref(db, 'class306/totalEarned'), eUpdates);
+                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
+                sel.value = ''; scoreEl.value = ''; scoreEl.readOnly = false; customEl.style.display = 'none'; customEl.value = '';
+                if (levelUps.length > 0) {
+                    const names = levelUps.map(l => `${l.name}(Lv.${l.lv})`).join(', ');
+                    window.showToast(`🎉 레벨업! ${names}`, 'levelup');
+                } else {
+                    window.showToast(`${checked.length}명 +${score}P 적립 완료!`);
+                }
+            });
+        };
+
+        window.doMileageSub = () => {
+            const scoreEl = document.getElementById('adm-sub-score');
+            const score = parseInt(scoreEl.value);
+            const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
+            if (isNaN(score) || score <= 0) return window.showToast("차감 점수를 입력하세요.", 'error');
+            if (checked.length === 0) return window.showToast("학생을 선택하세요.", 'error');
+            if (!confirm(`${checked.join(', ')}에서 ${score}P 차감할까요?`)) return;
+            get(ref(db, 'class306/mileage')).then(snap => {
+                const cur = snap.val() || {};
+                const updates = {};
+                checked.forEach(name => { updates[name] = Math.max(0, (cur[name] || 0) - score); });
+                update(ref(db, 'class306/mileage'), updates);
+                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
+                scoreEl.value = '';
+                window.showToast(`${checked.length}명 -${score}P 차감 완료!`);
+            });
+        };
+
+        window.saveConfig = () => {
+            const reasons = document.getElementById('adm-reasons-input').value;
+            const personalRewards = document.getElementById('adm-personal-rewards-input').value;
+            const groupRewards = document.getElementById('adm-group-rewards-input').value;
+            update(ref(db, 'class306/config'), { reasons, personalRewards, groupRewards });
+            ['adm-reasons-input','adm-personal-rewards-input','adm-group-rewards-input'].forEach(id => {
+                document.getElementById(id).dataset.dirty = '';
+            });
+            updateReasonDropdowns();
+            window.showToast("설정이 저장되었습니다!");
+        };
+
+        function renderAdminPraise(praiseObj) {
+            const pendingEl = document.getElementById('adm-praise-pending');
+            const approvedEl = document.getElementById('adm-praise-approved');
+            if (!pendingEl) return;
+            pendingEl.innerHTML = ''; approvedEl.innerHTML = '';
+            const pending = Object.entries(praiseObj).filter(([, p]) => !p.approved);
+            const approved = Object.entries(praiseObj).filter(([, p]) => p.approved);
+            
+            if (pending.length === 0) pendingEl.innerHTML = "<p class='empty-msg'>대기 중인 제보가 없어요.</p>";
+            pending.forEach(([id, p]) => {
+                pendingEl.innerHTML += `
+                    <div class="adm-praise-item">
+                        <div class="adm-praise-info"><b>${p.from} → ${p.to}</b><p>${p.content}</p><small>${p.time}</small></div>
+                        <div class="adm-praise-actions">
+                            <button class="btn-approve" onclick="window.approvePraise('${id}','${p.from}','${p.to}')">승인</button>
+                            <button class="btn-danger-sm" onclick="window.deletePraise('${id}')">거절</button>
+                        </div>
+                    </div>`;
+            });
+            
+            if (approved.length === 0) approvedEl.innerHTML = "<p class='empty-msg'>승인된 칭찬이 없어요.</p>";
+            approved.forEach(([id, p]) => {
+                approvedEl.innerHTML += `
+                    <div class="adm-praise-item">
+                        <div class="adm-praise-info"><b>${p.from} → ${p.to}</b><p>${p.content}</p></div>
+                        <button class="btn-danger-sm" onclick="window.deletePraiseWithMileage('${id}','${p.from}','${p.to}')">삭제</button>
+                    </div>`;
+            });
+        }
+
+        window.approvePraise = (id, from, to) => {
+            update(ref(db, `class306/praise/${id}`), { approved: true });
+            Promise.all([ get(ref(db, 'class306/mileage')), get(ref(db, 'class306/totalEarned')) ]).then(([mSnap, eSnap]) => {
+                const cur = mSnap.val() || {}; const earned = eSnap.val() || {};
+                update(ref(db, 'class306/mileage'), { [from]: (cur[from] || 0) + 1, [to]: (cur[to] || 0) + 2 });
+                update(ref(db, 'class306/totalEarned'), { [from]: (earned[from] || cur[from] || 0) + 1, [to]: (earned[to] || cur[to] || 0) + 2 });
+                window.showToast(`승인 완료! ${from}+1P, ${to}+2P 적립`);
+            });
+        };
+        window.deletePraise = (id) => {
+            if (confirm("이 제보를 거절/삭제하시겠습니까?")) { remove(ref(db, `class306/praise/${id}`)); window.showToast("삭제되었습니다."); }
+        };
+        window.deletePraiseWithMileage = (id, from, to) => {
+            if (!confirm(`삭제 시 ${from}(-1P), ${to}(-2P) 차감됩니다. 삭제하시겠습니까?`)) return;
+            remove(ref(db, `class306/praise/${id}`));
+            get(ref(db, 'class306/mileage')).then(snap => {
+                const cur = snap.val() || {};
+                update(ref(db, 'class306/mileage'), { [from]: Math.max(0, (cur[from] || 0) - 1), [to]: Math.max(0, (cur[to] || 0) - 2) });
+                window.showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
+            });
+        };
+
+        function renderAdminToday(impObj) {
+            const pendingEl = document.getElementById('adm-today-pending');
+            const approvedEl = document.getElementById('adm-today-approved');
+            if (!pendingEl) return;
+            pendingEl.innerHTML = ''; approvedEl.innerHTML = '';
+            const pending = Object.entries(impObj).filter(([, i]) => !i.approved);
+            const approved = Object.entries(impObj).filter(([, i]) => i.approved);
+            
+            if (pending.length === 0) pendingEl.innerHTML = "<p class='empty-msg'>대기 중인 기록이 없어요.</p>";
+            pending.forEach(([id, i]) => {
+                pendingEl.innerHTML += `
+                    <div class="adm-praise-item">
+                        <div class="adm-praise-info"><b>${i.name}</b> · ${i.date}<p>${i.content}</p></div>
+                        <div class="adm-praise-actions">
+                            <button class="btn-approve" onclick="window.approveToday('${id}','${i.name}')">승인</button>
+                            <button class="btn-danger-sm" onclick="window.deleteToday('${id}')">삭제</button>
+                        </div>
+                    </div>`;
+            });
+            if (approved.length === 0) approvedEl.innerHTML = "<p class='empty-msg'>승인된 기록이 없어요.</p>";
+            approved.forEach(([id, i]) => {
+                approvedEl.innerHTML += `
+                    <div class="adm-praise-item">
+                        <div class="adm-praise-info"><b>${i.name}</b> · ${i.date}<p>${i.content}</p></div>
+                        <button class="btn-danger-sm" onclick="window.deleteTodayWithMileage('${id}','${i.name}')">삭제</button>
+                    </div>`;
+            });
+            const qInput = document.getElementById('adm-q-input');
+            if (qInput && globalData.config?.manualQuestion) qInput.value = globalData.config.manualQuestion;
+        }
+
+        window.approveToday = (id, name) => {
+            update(ref(db, `class306/impression/${id}`), { approved: true });
+            Promise.all([ get(ref(db, `class306/mileage/${name}`)), get(ref(db, `class306/totalEarned/${name}`)) ]).then(([mSnap, eSnap]) => {
+                const cur = mSnap.val() || 0; const earned = eSnap.val() || cur;
+                set(ref(db, `class306/mileage/${name}`), cur + 1);
+                set(ref(db, `class306/totalEarned/${name}`), earned + 1);
+                window.showToast(`승인 완료! ${name}+1P 적립`);
+            });
+        };
+        window.deleteToday = (id) => {
+            if (confirm("이 기록을 삭제하시겠습니까?")) { remove(ref(db, `class306/impression/${id}`)); window.showToast("삭제되었습니다."); }
+        };
+        window.deleteTodayWithMileage = (id, name) => {
+            if (!confirm(`삭제 시 ${name}(-1P) 차감됩니다. 삭제하시겠습니까?`)) return;
+            remove(ref(db, `class306/impression/${id}`));
+            get(ref(db, `class306/mileage/${name}`)).then(s => {
+                set(ref(db, `class306/mileage/${name}`), Math.max(0, (s.val() || 0) - 1));
+                window.showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
+            });
+        };
+        window.updateManualQ = () => {
+            const q = document.getElementById('adm-q-input').value.trim();
+            if (!q) return window.showToast("질문을 입력하세요.", 'error');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            update(ref(db, 'class306/config'), { manualQuestion: q, manualQuestionDate: dateStr });
+            window.showToast("오늘의 질문이 변경되었습니다!");
+        };
+    </script>
+
+    <style>
+        :root {
+            --primary: #2DD4BF; --secondary: #38BDF8; --accent: #F472B6;
+            --mint-light: #F0FDFA; --study: #6366F1;
+            --bg: #F0F9FF; --card: rgba(255, 255, 255, 0.85); --text: #0F172A; --text-sub: #64748B;
+            --border: rgba(226, 232, 240, 0.8); --grad: linear-gradient(135deg, #2DD4BF 0%, #38BDF8 100%);
+            --shadow: 0 10px 25px -5px rgba(45, 212, 191, 0.1), 0 8px 10px -6px rgba(45, 212, 191, 0.1);
+            --radius: 24px; --max-w: 680px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); padding-top: 40px; padding-bottom: 60px; letter-spacing: -0.02em; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+        .glass-card { background: white; border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 16px; width: calc(100% - 32px); max-width: var(--max-w); }
+        .glass-card h2 { font-size: 1.3rem; margin-bottom: 16px; letter-spacing: -0.03em; color: var(--text); }
+        
+        .adm-tab-nav { display: flex; background: white; border-radius: 18px; padding: 8px; gap: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); flex-wrap: wrap; border: 1px solid var(--border); width: calc(100% - 32px); max-width: var(--max-w); }
+        .adm-tab-btn { flex: 1; padding: 12px 6px; border: none; border-radius: 14px; background: transparent; font-weight: 800; color: var(--text-sub); cursor: pointer; font-family: inherit; font-size: 0.85rem; transition: all 0.2s; min-width: 56px; }
+        .adm-tab-btn.active { background: var(--text); color: white; }
+
+        .adm-tab-content { display: none; width: 100%; display: flex; justify-content: center; }
+        .adm-tab-content.active { display: block; width: 100%; }
+        
+        .adm-section { background: white; border-radius: 18px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); }
+        .adm-section h4 { font-size: 1rem; font-weight: 800; color: var(--primary-dark); margin-bottom: 14px; }
+        
+        .adm-cal-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+        .adm-cal-item:last-child { border-bottom: none; }
+        .adm-cal-info { display: flex; gap: 14px; align-items: center; }
+        .adm-cal-date { color: var(--primary); font-weight: 800; font-size: 0.9rem; min-width: 48px; }
+        .adm-cal-title { font-weight: 700; }
+        .adm-cal-add { display: flex; gap: 10px; align-items: flex-end; }
+        .adm-cal-add input { flex: 1; margin-bottom: 0; }
+        
+        .student-check-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: 240px; overflow-y: auto; padding: 6px 0; }
+        .adm-mileage-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #F8FAFC; border-radius: 12px; border: 1.5px solid transparent; cursor: pointer; transition: all 0.2s; }
+        .adm-mileage-item:has(.student-check:checked) { border-color: var(--primary); background: var(--mint-light); }
+        .adm-mileage-item input[type="checkbox"] { accent-color: var(--primary); cursor: pointer; width: 16px; height: 16px; }
+        .adm-m-name { flex: 1; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+        .adm-m-score { font-weight: 900; color: var(--primary); font-size: 0.85rem; }
+        
+        .btn-sel-all { padding: 8px 16px; border-radius: 16px; border: 1px solid var(--border); background: #F8FAFC; font-size: 0.85rem; font-weight: 800; cursor: pointer; font-family: inherit; color: var(--text-sub); transition: all 0.2s; }
+        .btn-sel-all:hover { background: white; border-color: var(--text); color: var(--text); }
+        .btn-danger-sm { padding: 8px 12px; border: none; border-radius: 10px; background: #EF4444; color: white; font-weight: 800; cursor: pointer; font-size: 0.85rem; }
+        .btn-approve { padding: 8px 14px; border: none; border-radius: 10px; background: var(--primary); color: white; font-weight: 800; cursor: pointer; font-size: 0.85rem; }
+        
+        .adm-praise-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+        .adm-praise-item:last-child { border-bottom: none; }
+        .adm-praise-info { flex: 1; }
+        .adm-praise-info b { font-size: 0.95rem; }
+        .adm-praise-info p { font-size: 0.9rem; color: var(--text); margin: 6px 0; }
+        .adm-praise-info small { font-size: 0.8rem; color: var(--text-sub); }
+        .adm-praise-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+        .adm-cert-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); gap: 12px; }
+        .cert-badge { display: inline-block; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 20px; margin-right: 8px; }
+        .cert-badge.pass { background: var(--mint-light); color: var(--primary-dark); }
+        .cert-badge.fail { background: #FEF2F2; color: #EF4444; }
+
+        .empty-msg { text-align: center; color: var(--text-sub); padding: 24px 0; font-size: 0.95rem; font-weight: 500; }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--text); color: white; padding: 14px 28px; border-radius: 30px; font-weight: 800; font-size: 0.95rem; z-index: 9999; transition: transform 0.3s ease; }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.error { background: #EF4444; }
+        .toast.levelup { background: linear-gradient(135deg, var(--study), var(--primary)); font-size: 1.05rem; }
+
+        input[type="text"], input[type="number"], input[type="date"], input[type="password"], textarea, select { width: 100%; padding: 14px 18px; margin-bottom: 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,0.1); font-family: inherit; font-size: 0.95rem; color: var(--text); background: #F8FAFC; outline: none; transition: all 0.2s; }
+        input:focus, textarea:focus, select:focus { border-color: var(--primary); background: white; }
+        .btn-main { width: 100%; padding: 16px; border: none; border-radius: 16px; background: var(--text); color: white; font-weight: 800; cursor: pointer; font-family: inherit; font-size: 1.05rem; transition: transform 0.2s; }
+
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: white; border-radius: 28px; padding: 40px 36px; max-width: 400px; width: 90%; box-shadow: 0 30px 60px rgba(0,0,0,0.2); text-align: center; }
+        .modal-box h2 { font-size: 1.5rem; font-weight: 900; margin-bottom: 8px; }
+        .modal-box p { color: var(--text-sub); font-size: 0.95rem; margin-bottom: 24px; }
+        .modal-lock { font-size: 3.5rem; margin-bottom: 16px; }
+        .modal-input-wrap input { width: 100%; padding: 16px 20px; border-radius: 16px; border: 2px solid var(--border); font-size: 1.2rem; text-align: center; letter-spacing: 8px; margin-bottom: 16px; background: white; }
+        #admin-pw-error { color: #EF4444; font-size: 0.9rem; margin-bottom: 16px; display: none; font-weight: 600; }
+        .btn-confirm { width: 100%; padding: 14px; border: none; border-radius: 14px; background: var(--grad); color: white; font-weight: 800; cursor: pointer; font-family: inherit; font-size: 1.05rem; }
+
+        @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
+        .shake { animation: shake 0.4s ease; }
+
+        @media (max-width: 480px) { .student-check-list { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+
+<!-- 관리자 접속 비밀번호 -->
+<div id="admin-modal" class="modal-overlay open">
+    <div class="modal-box">
+        <div class="modal-lock">🔐</div>
+        <h2>관리자 전용</h2>
+        <p>선생님만 접근할 수 있어요</p>
+        <div class="modal-input-wrap">
+            <input type="password" id="admin-pw-input" placeholder="비밀번호">
+        </div>
+        <div id="admin-pw-error">비밀번호가 틀렸습니다 😢</div>
+        <button class="btn-confirm" onclick="window.tryAdminLogin()">접속하기</button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="adm-tab-nav">
+    <button class="adm-tab-btn active" onclick="window.showAdminTab(this,'adm-students')">명단 관리</button>
+    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-home')">홈</button>
+    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-mileage')">마일리지</button>
+    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-praise')">칭찬감옥</button>
+    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-today')">오늘하루</button>
+    <button class="adm-tab-btn" onclick="window.showAdminTab(this,'adm-cert')">스터디 체크</button>
+</div>
+
+<!-- 1. 학생 명단 관리 탭 -->
+<div id="adm-students" class="adm-tab-content active">
+    <div class="glass-card">
+        <h2>👥 학생 명단 관리</h2>
+        <div class="adm-section">
+            <h4>명단 추가 및 수정</h4>
+            <div style="display:flex; gap:10px; align-items: flex-start;">
+                <input type="number" id="adm-std-num" placeholder="번호" style="width: 80px; margin-bottom: 0;">
+                <input type="text" id="adm-std-name" placeholder="이름" style="flex: 1; margin-bottom: 0;">
+                <button class="btn-main" id="adm-std-btn" onclick="window.saveStudent()" style="width: auto; padding: 14px 24px;">추가</button>
+            </div>
+        </div>
+        <div class="adm-section">
+            <h4>등록된 명단 목록</h4>
+            <div id="adm-std-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 관리자 홈 -->
+<div id="adm-home" class="adm-tab-content">
+    <div class="glass-card">
+        <h2>📅 일정 관리</h2>
+        <div class="adm-section">
+            <h4>새 일정 추가</h4>
+            <div class="adm-cal-add">
+                <input type="date" id="adm-cal-date" style="flex:1; margin-bottom:0">
+                <input type="text" id="adm-cal-title" placeholder="일정 제목" style="flex:2; margin-bottom:0">
+                <button class="btn-approve" onclick="window.addCal()" style="white-space:nowrap; padding:14px 18px;">추가</button>
+            </div>
+        </div>
+        <div class="adm-section"><h4>등록된 일정</h4><div id="adm-cal-list"></div></div>
+    </div>
+</div>
+
+<!-- 3. 관리자 마일리지 -->
+<div id="adm-mileage" class="adm-tab-content">
+    <div class="glass-card">
+        <h2>💰 마일리지 관리</h2>
+        <div class="adm-section">
+            <h4>적립 방법 설정</h4>
+            <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:10px;">한 줄에 하나씩 <b>사유: +점수P</b> 형식</p>
+            <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;스터디 체크: +2P"></textarea>
+            <h4 style="margin-top:8px;">개인 보상 설정</h4>
+            <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
+            <h4 style="margin-top:8px;">단체 보상 설정</h4>
+            <textarea id="adm-group-rewards-input" rows="3" placeholder="3,000P: 학급 파티"></textarea>
+            <button class="btn-main" onclick="window.saveConfig()">설정 저장</button>
+        </div>
+        <div class="adm-section">
+            <h4>마일리지 적립/차감</h4>
+            <select id="adm-reason-select" onchange="window.onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')"><option value="">적립 사유 선택</option></select>
+            <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
+            <div style="display:flex; gap:10px; margin-bottom:14px; align-items:center;">
+                <input type="number" id="adm-add-score" placeholder="점수" style="flex:1; margin-bottom:0; min-width:0;">
+                <span style="font-size:0.9rem; font-weight:700; color:var(--text-sub); white-space:nowrap;">P 적립</span>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <button class="btn-sel-all" onclick="window.toggleAllStudents('all')">전체 선택</button>
+                <button class="btn-sel-all" onclick="window.toggleAllStudents('none')">전체 해제</button>
+            </div>
+            <div id="adm-mileage-list" class="student-check-list"></div>
+            <div style="display:flex; gap:10px; margin-top:16px;">
+                <button class="btn-main" onclick="window.doMileageAdd()" style="flex:2;">✅ 적립하기</button>
+                <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                    <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0; font-size:0.85rem; padding:10px;">
+                    <button class="btn-danger-sm" style="width:100%; padding:10px;" onclick="window.doMileageSub()">차감하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 4. 관리자 칭찬감옥 -->
+<div id="adm-praise" class="adm-tab-content">
+    <div class="glass-card">
+        <h2>🌟 칭찬감옥 관리</h2>
+        <div class="adm-section"><h4>⏳ 승인 대기</h4><div id="adm-praise-pending"></div></div>
+        <div class="adm-section"><h4>✅ 승인된 칭찬</h4><div id="adm-praise-approved"></div></div>
+    </div>
+</div>
+
+<!-- 5. 관리자 오늘하루 -->
+<div id="adm-today" class="adm-tab-content">
+    <div class="glass-card">
+        <h2>📝 오늘하루 관리</h2>
+        <div class="adm-section">
+            <h4>오늘의 질문 수동 변경</h4>
+            <input type="text" id="adm-q-input" placeholder="질문 직접 입력 (비워두면 자동 생성)">
+            <button class="btn-main" onclick="window.updateManualQ()">오늘 질문 변경</button>
+        </div>
+        <div class="adm-section"><h4>⏳ 승인 대기</h4><div id="adm-today-pending"></div></div>
+        <div class="adm-section"><h4>✅ 승인된 기록</h4><div id="adm-today-approved"></div></div>
+    </div>
+</div>
+
+<!-- 6. 관리자 스터디 체크 -->
+<div id="adm-cert" class="adm-tab-content">
+    <div class="glass-card">
+        <h2>📚 스터디 체크 관리</h2>
+        <div class="adm-section">
+            <h4>🔑 Claude API 키 설정</h4>
+            <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:12px; line-height:1.5;">
+                <a href="https://console.anthropic.com" target="_blank" style="color:var(--study); font-weight:700;">console.anthropic.com</a>에서 발급 후 입력하세요.
+            </p>
+            <input type="text" id="adm-api-key-input" placeholder="sk-ant-...">
+            <button class="btn-main" style="background:var(--study);" onclick="window.saveApiKey()">API 키 저장</button>
+        </div>
+        <div class="adm-section">
+            <h4>📊 체크 통계</h4>
+            <div id="adm-cert-stats" style="font-size:0.95rem; font-weight:500; color:var(--text-sub); padding: 6px 0;"></div>
+        </div>
+        <div class="adm-section">
+            <h4>📋 전체 체크 내역</h4>
+            <div id="adm-cert-list"></div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
