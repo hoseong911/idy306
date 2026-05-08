@@ -4,10 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>INTO THE 306 WORLD</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
-    <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&display=swap" rel="stylesheet">
-    
+
     <script>
         window.showSection = (id) => {
             document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
@@ -15,7 +13,6 @@
             document.getElementById(id).classList.add('active');
             document.getElementById('btn-' + id).classList.add('active');
         };
-
         window.showSubTab = (btn, sectionId, tabId) => {
             const section = document.getElementById(sectionId);
             section.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -23,7 +20,6 @@
             document.getElementById(tabId).classList.add('active');
             btn.classList.add('active');
         };
-
         window.showToast = (msg, type = 'success') => {
             const t = document.getElementById('toast');
             t.innerText = msg;
@@ -31,7 +27,6 @@
             clearTimeout(t._timer);
             t._timer = setTimeout(() => t.classList.remove('show'), 3000);
         };
-
         window.previewCertPhoto = (input) => {
             const file = input.files[0];
             if (!file) return;
@@ -45,13 +40,11 @@
             };
             reader.readAsDataURL(file);
         };
-
         window.triggerCamera = () => {
             const input = document.getElementById('cert-file-input');
             input.setAttribute('capture', 'environment');
             input.click();
         };
-        
         window.triggerGallery = () => {
             const input = document.getElementById('cert-file-input');
             input.removeAttribute('capture');
@@ -61,7 +54,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-        import { getDatabase, ref, set, push, onValue, update, get } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+        import { getDatabase, ref, set, push, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
         import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-storage.js";
 
         const firebaseConfig = {
@@ -82,20 +75,25 @@
         const endDate = new Date("2027-01-08");
         const holidays = ["2026-01-01","2026-01-28","2026-01-29","2026-01-30","2026-03-01","2026-05-05","2026-05-25","2026-06-06","2026-08-15","2026-09-24","2026-09-25","2026-09-26","2026-10-03","2026-10-09","2026-12-25"];
 
-        const MAX_DAILY_CERT = 1;
-        const CERT_MILEAGE = 3;
+        // ✅ 수정 6: CERT_MILEAGE를 config에서 읽도록 변수 분리
+        let CERT_MILEAGE = 3;
 
         let globalData = {};
+        // ✅ 수정 2: studentList를 객체 배열로 관리 {num, name}
         let studentList = [];
 
         onValue(ref(db, 'class306'), (snapshot) => {
             globalData = snapshot.val() || {};
-            
-            // 학생 명단 동기화 (관리자 모드에서 추가된 형식)
+
+            // ✅ 수정 2: 학생 목록을 {num, name} 객체 배열로 유지
+            studentList = [];
             if (globalData.students) {
-                studentList = Object.values(globalData.students)
-                                    .sort((a, b) => a.num - b.num)
-                                    .map(s => `${s.num} ${s.name}`);
+                studentList = Object.values(globalData.students).sort((a, b) => a.num - b.num);
+            }
+
+            // ✅ 수정 6: config에서 cert 마일리지 읽기
+            if (globalData.config?.certMileage) {
+                CERT_MILEAGE = globalData.config.certMileage;
             }
 
             populateDropdowns();
@@ -105,6 +103,7 @@
             renderToday(globalData.impression || {});
             renderMileageGuide(globalData.config || {});
             renderStudyCertHistory(globalData.studyCert || {});
+
             const todayStr = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
             if (document.getElementById('display-date')) document.getElementById('display-date').innerText = todayStr;
             autoSetDailyQuestion(globalData.config || {});
@@ -146,6 +145,66 @@
             return Object.values(certs).filter(c => c.name === name && c.date === todayStr && c.result === 'pass').length;
         }
 
+        function getLevel(score) {
+            let level = 1, required = 10, accumulated = 0;
+            while (score >= accumulated + required) { accumulated += required; level++; required += 10; }
+            return { level, progress: score - accumulated, nextRequired: required, accumulated };
+        }
+
+        function getLevelColor(level) {
+            if (level >= 10) return '#F472B6';
+            if (level >= 7) return '#38BDF8';
+            if (level >= 5) return '#6366F1';
+            if (level >= 3) return '#2DD4BF';
+            return '#94A3B8';
+        }
+
+        // ✅ 자동화: 오늘하루 제출 시 자동 승인 + 마일리지 적립
+        window.submitToday = async () => {
+            const name = document.getElementById('t-name').value;
+            const content = document.getElementById('t-content').value.trim();
+            const q = document.getElementById('daily-q-text').innerText;
+            if (!name || !content) return window.showToast("내용을 입력하세요.", 'error');
+
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const todayKR = new Date().toLocaleDateString('ko-KR');
+
+            // 오늘 이미 제출했는지 확인
+            const existing = Object.values(globalData.impression || {});
+            const alreadySubmitted = existing.some(i => i.name === name && i.date === todayKR);
+            if (alreadySubmitted) return window.showToast("오늘은 이미 기록했어요! 내일 또 참여해요 😊", 'error');
+
+            try {
+                // 자동 승인으로 저장
+                await push(ref(db, 'class306/impression'), {
+                    name, content, question: q, date: todayKR,
+                    approved: true, time: new Date().toLocaleString('ko-KR')
+                });
+
+                // 마일리지 자동 적립
+                const [mSnap, eSnap] = await Promise.all([
+                    get(ref(db, `class306/mileage/${name}`)),
+                    get(ref(db, `class306/totalEarned/${name}`))
+                ]);
+                const cur = mSnap.val() || 0;
+                const earned = eSnap.val() || cur;
+                const afterEarned = earned + 1;
+                await set(ref(db, `class306/mileage/${name}`), cur + 1);
+                await set(ref(db, `class306/totalEarned/${name}`), afterEarned);
+
+                if (getLevel(earned).level < getLevel(afterEarned).level) {
+                    setTimeout(() => window.showToast(`🎉 레벨업! Lv.${getLevel(afterEarned).level}`, 'levelup'), 800);
+                }
+
+                ['t-name','t-content'].forEach(id => document.getElementById(id).value = '');
+                window.showToast("기록 완료! +1P 자동 적립 ✅");
+            } catch(e) {
+                console.error(e);
+                window.showToast("오류가 발생했어요.", 'error');
+            }
+        };
+
+        // ✅ 스터디 체크 (Claude API 유지, 버그 수정)
         window.submitStudyCert = async () => {
             const name = document.getElementById('cert-name').value;
             const file = document.getElementById('cert-file-input').files[0];
@@ -157,10 +216,10 @@
             if (!studyContent) return window.showToast("무엇을 공부했는지 입력해주세요.", 'error');
 
             const todayCount = getTodayCertCount(name);
-            if (todayCount >= MAX_DAILY_CERT) return window.showToast(`오늘은 이미 체크했어요! 내일 또 해요 😊`, 'error');
+            if (todayCount >= 1) return window.showToast("오늘은 이미 체크했어요! 내일 또 해요 😊", 'error');
 
             const CLAUDE_API_KEY = globalData.config?.claudeApiKey || "";
-            if(!CLAUDE_API_KEY) return window.showToast("API 키가 설정되지 않았습니다.", 'error');
+            if (!CLAUDE_API_KEY) return window.showToast("API 키가 설정되지 않았습니다.", 'error');
 
             btn.disabled = true;
             btn.innerText = "AI 분석 중... 🤖";
@@ -203,15 +262,17 @@
 
                 const data = await response.json();
                 const rawText = data.content?.[0]?.text || '{"pass":false,"date_match":false,"is_study":false,"photo_date":"없음","reason":"분석 실패","emoji":"❌"}';
-                
+
                 let result;
-                try { result = JSON.parse(rawText.replace(/```json|
-```/g, '').trim()); } 
-                catch { result = { pass: false, date_match: false, is_study: false, photo_date: "없음", reason: "분석 오류", emoji: "⚠️" }; }
+                try {
+                    result = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+                } catch {
+                    result = { pass: false, date_match: false, is_study: false, photo_date: "없음", reason: "분석 오류", emoji: "⚠️" };
+                }
 
                 if (!result.pass) {
-                    if (!result.date_match && result.is_study) { result.reason = `날짜 불일치 (사진: ${result.photo_date || '없음'})`; result.emoji = "📅"; } 
-                    else if (result.date_match && !result.is_study) { result.reason = "공부 중인 사진이 아니에요"; result.emoji = "📚"; } 
+                    if (!result.date_match && result.is_study) { result.reason = `날짜 불일치 (사진: ${result.photo_date || '없음'})`; result.emoji = "📅"; }
+                    else if (result.date_match && !result.is_study) { result.reason = "공부 중인 사진이 아니에요"; result.emoji = "📚"; }
                     else if (!result.date_match && !result.is_study) { result.reason = "날짜 불일치 + 공부 사진 아님"; result.emoji = "❌"; }
                 }
 
@@ -233,7 +294,8 @@
 
                 if (result.pass) {
                     const [mSnap, eSnap] = await Promise.all([
-                        get(ref(db, `class306/mileage/${name}`)), get(ref(db, `class306/totalEarned/${name}`))
+                        get(ref(db, `class306/mileage/${name}`)),
+                        get(ref(db, `class306/totalEarned/${name}`))
                     ]);
                     const before = mSnap.val() || 0;
                     const beforeEarned = eSnap.val() || before;
@@ -249,7 +311,8 @@
                 console.error(err);
                 window.showToast("오류가 발생했어요. 잠시 후 다시 시도해주세요.", 'error');
             } finally {
-                btn.disabled = false; btn.innerText = "스터디 체크하기 📚";
+                btn.disabled = false;
+                btn.innerText = "스터디 체크하기 📚";
                 document.getElementById('cert-file-input').value = '';
                 document.getElementById('cert-study-content').value = '';
                 document.getElementById('cert-preview').style.display = 'none';
@@ -264,7 +327,9 @@
             document.getElementById('cert-result-emoji').innerText = result.emoji || (result.pass ? '🎉' : '😢');
             document.getElementById('cert-result-title').innerText = result.pass ? '체크 완료!' : '체크 실패';
             document.getElementById('cert-result-desc').innerText = result.pass ? `"${studyContent}" 공부 확인! ✅` : result.reason;
-            document.getElementById('cert-result-mileage').innerText = result.pass ? `${name} +${CERT_MILEAGE}P 적립! 오늘 체크 완료 ✅` : (result.date_match === false ? `📅 사진 날짜(${result.photo_date || '없음'})와 오늘 날짜가 달라요` : '오늘 날짜 타임스탬프가 찍힌 공부 사진을 올려주세요!');
+            document.getElementById('cert-result-mileage').innerText = result.pass
+                ? `${name} +${CERT_MILEAGE}P 적립! 오늘 체크 완료 ✅`
+                : (result.date_match === false ? `📅 사진 날짜(${result.photo_date || '없음'})와 오늘 날짜가 달라요` : '오늘 날짜 타임스탬프가 찍힌 공부 사진을 올려주세요!');
         }
 
         function fileToBase64(file) {
@@ -316,17 +381,6 @@
             else sorted.forEach(([, c]) => { container.innerHTML += `<div class="compact-cal-item"><b>${c.date.slice(5)}</b><span>${c.title}</span></div>`; });
         }
 
-        function getLevel(score) {
-            let level = 1, required = 10, accumulated = 0;
-            while (score >= accumulated + required) { accumulated += required; level++; required += 10; }
-            return { level, progress: score - accumulated, nextRequired: required, accumulated };
-        }
-
-        function getLevelColor(level) {
-            if (level >= 10) return '#F472B6'; if (level >= 7) return '#38BDF8';
-            if (level >= 5) return '#6366F1'; if (level >= 3) return '#2DD4BF'; return '#94A3B8';
-        }
-
         function renderMileage(mileageObj) {
             const container = document.getElementById('mileage-rank-list');
             const totalDisplay = document.getElementById('total-sum');
@@ -336,7 +390,8 @@
             let classTotal = 0;
             const allScores = {};
             const allEarned = globalData.totalEarned || {};
-            studentList.forEach(name => { allScores[name] = mileageObj[name] || 0; });
+            // ✅ 수정 2: name만 추출해서 키로 사용
+            studentList.forEach(s => { allScores[s.name] = mileageObj[s.name] || 0; });
             const sorted = Object.entries(allScores).sort((a, b) => b[1] - a[1]);
             sorted.forEach(([name, score], idx) => {
                 if (score > 0) classTotal += score;
@@ -362,7 +417,7 @@
 
         function renderMileageGuide(config) {
             const f = t => t.split('\n').map(l => `<div class="guide-line">${l}</div>`).join('');
-            if (document.getElementById('display-reasons')) document.getElementById('display-reasons').innerHTML = f(config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +2P");
+            if (document.getElementById('display-reasons')) document.getElementById('display-reasons').innerHTML = f(config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +3P");
             if (document.getElementById('display-personal-rewards')) document.getElementById('display-personal-rewards').innerHTML = f(config.personalRewards || "5P: 까까\n100P: 자리지정");
             if (document.getElementById('display-group-rewards')) document.getElementById('display-group-rewards').innerHTML = f(config.groupRewards || "3,000P: 학급 파티");
         }
@@ -378,13 +433,25 @@
                 approved.forEach(([, p]) => { const d = p.time ? p.time.split(' ')[0] : '날짜 미상'; if (!grouped[d]) grouped[d] = []; grouped[d].push(p); });
                 Object.entries(grouped).reverse().forEach(([date, items]) => {
                     container.innerHTML += `<div class="group-label">📅 ${date}</div>`;
-                    items.forEach(p => container.innerHTML += `<div class="praise-card"><div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div><p>${p.content}</p><small>- ${p.from}</small></div>`);
+                    items.forEach(p => container.innerHTML += `
+                        <div class="praise-card">
+                            <div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div>
+                            ${p.when ? `<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where || '-'}</div>` : ''}
+                            <p>${p.content}</p>
+                            <small>- ${p.from}</small>
+                        </div>`);
                 });
             } else {
                 approved.forEach(([, p]) => { if (!grouped[p.to]) grouped[p.to] = []; grouped[p.to].push(p); });
                 Object.entries(grouped).sort().forEach(([name, items]) => {
                     container.innerHTML += `<div class="group-label">👤 ${name}</div>`;
-                    items.forEach(p => container.innerHTML += `<div class="praise-card"><div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div><p>${p.content}</p><small>- ${p.from}</small></div>`);
+                    items.forEach(p => container.innerHTML += `
+                        <div class="praise-card">
+                            <div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div>
+                            ${p.when ? `<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where || '-'}</div>` : ''}
+                            <p>${p.content}</p>
+                            <small>- ${p.from}</small>
+                        </div>`);
                 });
             }
         };
@@ -404,6 +471,7 @@
             });
         };
 
+        // ✅ 수정 13: 로딩 중 드롭다운 비활성화
         function populateDropdowns() {
             ['p-from', 'p-to', 'cert-name', 't-name'].forEach(id => {
                 const el = document.getElementById(id);
@@ -411,29 +479,25 @@
                 const cur = el.value;
                 const placeholder = id === 'p-from' ? '제보자 선택' : id === 'p-to' ? '칭찬 주인공 선택' : '이름 선택';
                 el.innerHTML = `<option value="">${placeholder}</option>`;
-                studentList.forEach(name => { el.innerHTML += `<option value="${name}" ${cur === name ? 'selected' : ''}>${name}</option>`; });
+                studentList.forEach(s => {
+                    el.innerHTML += `<option value="${s.name}" ${cur === s.name ? 'selected' : ''}>${s.num}번 ${s.name}</option>`;
+                });
+                el.disabled = studentList.length === 0;
             });
         }
 
+        // ✅ 수정 1: 칭찬 제보 - 누가/언제/어디서/무엇을 필드 추가
         window.submitPraise = () => {
             const from = document.getElementById('p-from').value;
             const to = document.getElementById('p-to').value;
+            const when = document.getElementById('p-when').value.trim();
+            const where = document.getElementById('p-where').value.trim();
             const content = document.getElementById('p-content').value.trim();
-            if (!from || !to || !content) return window.showToast("빈칸을 채워주세요.", 'error');
+            if (!from || !to || !when || !where || !content) return window.showToast("모든 항목을 입력해주세요.", 'error');
             if (from === to) return window.showToast("자기 자신은 칭찬할 수 없어요!", 'error');
-            push(ref(db, 'class306/praise'), { from, to, content, approved: false, time: new Date().toLocaleString('ko-KR') });
-            ['p-from','p-to','p-content'].forEach(id => document.getElementById(id).value = '');
+            push(ref(db, 'class306/praise'), { from, to, when, where, content, approved: false, time: new Date().toLocaleString('ko-KR') });
+            ['p-from','p-to','p-when','p-where','p-content'].forEach(id => document.getElementById(id).value = '');
             window.showToast("제보 완료! 선생님 승인 후 공개돼요 😊");
-        };
-
-        window.submitToday = () => {
-            const name = document.getElementById('t-name').value;
-            const content = document.getElementById('t-content').value.trim();
-            const q = document.getElementById('daily-q-text').innerText;
-            if (!name || !content) return window.showToast("내용을 입력하세요.", 'error');
-            push(ref(db, 'class306/impression'), { name, content, question: q, date: new Date().toLocaleDateString('ko-KR'), approved: false, time: new Date().toLocaleString('ko-KR') });
-            ['t-name','t-content'].forEach(id => document.getElementById(id).value = '');
-            window.showToast("기록 완료! 선생님 승인 후 공개돼요 😊");
         };
 
         window.sortPraise = (btn, sortBy) => {
@@ -452,19 +516,20 @@
         :root {
             --primary: #2DD4BF; --secondary: #38BDF8; --accent: #F472B6;
             --mint-light: #F0FDFA; --blue-light: #F0F9FF; --study: #6366F1; --study-light: #E0E7FF;
-            --bg: #F0F9FF; --card: rgba(255, 255, 255, 0.85); --text: #0F172A; --text-sub: #64748B;
-            --border: rgba(226, 232, 240, 0.8); --grad: linear-gradient(135deg, #2DD4BF 0%, #38BDF8 100%);
-            --grad-study: linear-gradient(135deg, #6366F1 0%, #818CF8 100%);
-            --shadow: 0 10px 25px -5px rgba(45, 212, 191, 0.1), 0 8px 10px -6px rgba(45, 212, 191, 0.1);
+            --bg: #F0F9FF; --card: rgba(255,255,255,0.85); --text: #0F172A; --text-sub: #64748B;
+            --border: rgba(226,232,240,0.8);
+            --grad: linear-gradient(135deg,#2DD4BF 0%,#38BDF8 100%);
+            --grad-study: linear-gradient(135deg,#6366F1 0%,#818CF8 100%);
+            --shadow: 0 10px 25px -5px rgba(45,212,191,0.1),0 8px 10px -6px rgba(45,212,191,0.1);
             --radius: 24px; --max-w: 680px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); padding-bottom: 60px; letter-spacing: -0.02em; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+        body { font-family: 'Pretendard',sans-serif; background: var(--bg); color: var(--text); padding-bottom: 60px; letter-spacing: -0.02em; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
         header { padding: 36px 0 16px; text-align: center; width: 100%; }
-        h1 { font-weight: 900; font-size: clamp(2.2rem, 8vw, 3.6rem); background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.05em; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.05)); }
+        h1 { font-weight: 900; font-size: clamp(2.2rem,8vw,3.6rem); background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.05em; }
         nav { display: flex; gap: 8px; margin: 0 16px 20px; flex-wrap: wrap; justify-content: center; max-width: var(--max-w); width: 100%; }
-        .nav-btn { padding: 12px 18px; border: 1px solid rgba(45, 212, 191, 0.2); border-radius: 16px; background: white; box-shadow: var(--shadow); cursor: pointer; font-weight: 700; color: var(--text-sub); font-size: 0.9rem; transition: all 0.2s; font-family: inherit; }
-        .nav-btn.active { background: var(--text); color: white; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .nav-btn { padding: 12px 18px; border: 1px solid rgba(45,212,191,0.2); border-radius: 16px; background: white; box-shadow: var(--shadow); cursor: pointer; font-weight: 700; color: var(--text-sub); font-size: 0.9rem; transition: all 0.2s; font-family: inherit; }
+        .nav-btn.active { background: var(--text); color: white; }
         .class-total-banner { width: calc(100% - 32px); max-width: var(--max-w); background: var(--grad); color: white; padding: 22px; border-radius: var(--radius); margin-bottom: 20px; box-shadow: var(--shadow); }
         .total-info { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: 800; font-size: 0.95rem; }
         .progress-bar { background: rgba(255,255,255,0.3); height: 10px; border-radius: 5px; overflow: hidden; }
@@ -484,9 +549,9 @@
         .d-day-label { font-size: 0.8rem; color: var(--text-sub); margin-top: 4px; font-weight: 600; }
         .compact-cal-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
         .compact-cal-item b { color: var(--primary); font-size: 0.9rem; min-width: 48px; }
-        .rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+        .rank-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(140px,1fr)); gap: 12px; }
         .rank-card { background: white; border-radius: 18px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 1px solid var(--border); }
-        .rank-card.top-rank { background: linear-gradient(135deg, var(--mint-light), white); border-color: var(--primary); }
+        .rank-card.top-rank { background: linear-gradient(135deg,var(--mint-light),white); border-color: var(--primary); }
         .rank-medal { font-size: 1.4rem; font-weight: 900; color: var(--text-sub); }
         .rank-name { font-weight: 800; font-size: 0.95rem; }
         .rank-lv-badge { font-size: 0.75rem; font-weight: 900; border: 1.5px solid; border-radius: 20px; padding: 2px 10px; }
@@ -501,11 +566,18 @@
         .guide-box.pink { background: #FDF2F8; border-left-color: var(--accent); }
         .guide-box.green { background: var(--blue-light); border-left-color: var(--secondary); }
         .guide-line { padding: 4px 0; font-size: 0.95rem; font-weight: 500; }
+        /* 칭찬 감옥 */
+        .praise-card { background: white; border-radius: 16px; padding: 18px; margin-bottom: 12px; border-left: 5px solid var(--primary); }
+        .praise-header { font-weight: 800; margin-bottom: 6px; font-size: 1.05rem; }
+        .praise-meta { font-size: 0.82rem; color: var(--text-sub); margin-bottom: 8px; font-weight: 600; }
+        .praise-card p { font-size: 0.95rem; margin: 6px 0; }
+        .praise-card small { color: var(--text-sub); font-size: 0.85rem; }
+        /* 스터디 체크 */
         .cert-upload-area { border: 2px dashed var(--secondary); border-radius: 20px; text-align: center; cursor: pointer; background: #f0faff; min-height: 200px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; overflow: hidden; }
         #cert-placeholder { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 16px; }
         #cert-preview { display: none; width: 100%; max-height: 300px; object-fit: contain; border-radius: 18px; }
         .cert-btn-row { display: flex; gap: 10px; margin-bottom: 16px; }
-        .btn-cam, .btn-gallery, .btn-study-main { flex: 1; padding: 14px; border-radius: 14px; font-weight: 800; font-family: inherit; cursor: pointer; font-size: 0.95rem; border: none; }
+        .btn-cam,.btn-gallery,.btn-study-main { flex: 1; padding: 14px; border-radius: 14px; font-weight: 800; font-family: inherit; cursor: pointer; font-size: 0.95rem; border: none; }
         .btn-cam { background: var(--grad-study); color: white; }
         .btn-gallery { border: 2px solid var(--study); background: white; color: var(--study); }
         .btn-study-main { width: 100%; background: var(--study); color: white; margin-top: 6px; }
@@ -527,33 +599,31 @@
         .cert-hist-info .cert-hist-subject { font-size: 0.9rem; color: var(--study); font-weight: 700; display: block; }
         .cert-hist-info span { font-size: 0.8rem; color: var(--text-sub); }
         .cert-hist-score { font-weight: 900; color: var(--study); font-size: 0.95rem; }
+        /* 공통 */
         .sort-bar { display: flex; gap: 10px; margin-bottom: 16px; }
         .sort-bar button { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border); background: white; font-size: 0.85rem; font-weight: 700; cursor: pointer; color: var(--text-sub); font-family: inherit; }
         .sort-bar button.active { background: var(--text); color: white; border-color: var(--text); }
-        .praise-card { background: white; border-radius: 16px; padding: 18px; margin-bottom: 12px; border-left: 5px solid var(--primary); }
-        .praise-header { font-weight: 800; margin-bottom: 8px; font-size: 1.05rem; }
-        .praise-card p { font-size: 0.95rem; margin: 6px 0; }
-        .praise-card small { color: var(--text-sub); font-size: 0.85rem; }
         .today-item { padding: 16px; background: white; border-radius: 16px; margin-bottom: 10px; font-size: 0.95rem; border: 1px solid var(--border); }
         .group-label { font-weight: 800; font-size: 0.9rem; color: var(--text-sub); padding: 12px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
-        .q-box { background: var(--blue-light); border-radius: 16px; padding: 20px; margin-bottom: 20px; text-align: center; border: 1px solid rgba(56, 189, 248, 0.2); }
+        .q-box { background: var(--blue-light); border-radius: 16px; padding: 20px; margin-bottom: 20px; text-align: center; border: 1px solid rgba(56,189,248,0.2); }
         .q-box h4 { font-size: 1.05rem; font-weight: 800; }
-        input[type="text"], input[type="number"], input[type="date"], textarea, select { width: 100%; padding: 14px 18px; margin-bottom: 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,0.1); font-family: inherit; font-size: 0.95rem; color: var(--text); background: #F8FAFC; outline: none; }
-        input:focus, textarea:focus, select:focus { border-color: var(--primary); background: white; }
+        .auto-badge { display: inline-block; background: #DCFCE7; color: #15803D; font-size: 0.78rem; font-weight: 800; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
+        input[type="text"],input[type="number"],input[type="date"],textarea,select { width: 100%; padding: 14px 18px; margin-bottom: 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,0.1); font-family: inherit; font-size: 0.95rem; color: var(--text); background: #F8FAFC; outline: none; }
+        input:focus,textarea:focus,select:focus { border-color: var(--primary); background: white; }
+        select:disabled { opacity: 0.5; }
         .btn-main { width: 100%; padding: 16px; border: none; border-radius: 16px; background: var(--text); color: white; font-weight: 800; cursor: pointer; font-family: inherit; font-size: 1.05rem; }
         .empty-msg { text-align: center; color: var(--text-sub); padding: 24px 0; font-size: 0.95rem; font-weight: 500; }
-        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--text); color: white; padding: 14px 28px; border-radius: 30px; font-weight: 800; font-size: 0.95rem; z-index: 9999; transition: transform 0.3s ease; }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--text); color: white; padding: 14px 28px; border-radius: 30px; font-weight: 800; font-size: 0.95rem; z-index: 9999; transition: transform 0.3s ease; white-space: nowrap; }
         .toast.show { transform: translateX(-50%) translateY(0); }
         .toast.error { background: #EF4444; }
-        .toast.levelup { background: linear-gradient(135deg, var(--study), var(--primary)); font-size: 1.05rem; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-        @media (max-width: 480px) { .rank-grid { grid-template-columns: repeat(3, 1fr); } nav { gap: 6px; } .nav-btn { padding: 10px 12px; font-size: 0.85rem; } }
+        .toast.levelup { background: linear-gradient(135deg,var(--study),var(--primary)); font-size: 1.05rem; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+        @media (max-width:480px) { .rank-grid { grid-template-columns: repeat(3,1fr); } nav { gap: 6px; } .nav-btn { padding: 10px 12px; font-size: 0.85rem; } }
     </style>
 </head>
 <body>
 
 <div class="toast" id="toast"></div>
-
 <header><h1>INTO THE 306 WORLD</h1></header>
 
 <nav>
@@ -572,17 +642,19 @@
     <div class="progress-bar"><div id="total-bar-fill" class="progress-fill"></div></div>
 </div>
 
+<!-- 홈 -->
 <section id="home" class="content-section active">
     <div class="glass-card">
         <div class="d-day-row">
             <div class="d-day-item"><div class="d-day-num" id="d-day-start">0</div><div class="d-day-label">함께한 날</div></div>
             <div class="d-day-item"><div class="d-day-num" id="d-day-end">0</div><div class="d-day-label">졸업까지</div></div>
         </div>
-        <h3 style="text-align:center; margin-bottom:16px; font-size:1rem; color:var(--text-sub);">📅 306 일정 (3주 이내)</h3>
+        <h3 style="text-align:center;margin-bottom:16px;font-size:1rem;color:var(--text-sub);">📅 306 일정 (3주 이내)</h3>
         <div id="cal-list"></div>
     </div>
 </section>
 
+<!-- 마일리지 -->
 <section id="mileage" class="content-section">
     <div class="sub-nav">
         <button class="active" onclick="window.showSubTab(this,'mileage','m-guide')">적립 및 보상</button>
@@ -603,6 +675,7 @@
     </div>
 </section>
 
+<!-- 스터디 체크 -->
 <section id="study" class="content-section">
     <div class="sub-nav">
         <button class="active" onclick="window.showSubTab(this,'study','s-upload')">체크하기</button>
@@ -611,7 +684,7 @@
     <div id="s-upload" class="tab-content active">
         <div class="glass-card">
             <h2>📚 스터디 체크</h2>
-            <div class="cert-limit-info">하루 1회 인증 · 통과 시 +3P 자동 적립 · 오늘 날짜 타임스탬프 필수</div>
+            <div class="cert-limit-info">하루 1회 · AI 자동 판정 · 통과 시 포인트 자동 적립 ⚡</div>
             <select id="cert-name"><option value="">이름 선택</option></select>
             <div class="cert-upload-area" onclick="document.getElementById('cert-file-input').click()">
                 <div id="cert-placeholder"><span style="font-size:2.5rem;">📷</span><span>사진을 탭하여 선택</span><small>오늘 날짜 타임스탬프가 찍힌 공부 사진</small></div>
@@ -637,6 +710,7 @@
     </div>
 </section>
 
+<!-- 칭찬감옥 -->
 <section id="praise" class="content-section">
     <div class="sub-nav">
         <button class="active" onclick="window.showSubTab(this,'praise','p-form')">제보하기</button>
@@ -647,7 +721,10 @@
             <h2>🌟 친구 칭찬 제보</h2>
             <select id="p-from"><option value="">제보자 선택</option></select>
             <select id="p-to"><option value="">칭찬 주인공 선택</option></select>
-            <textarea id="p-content" rows="3" placeholder="칭찬 내용을 적어주세요!"></textarea>
+            <!-- ✅ 수정 1: 언제/어디서 필드 추가 -->
+            <input type="text" id="p-when" placeholder="📅 언제? (예: 오늘 점심시간, 어제 쉬는 시간)">
+            <input type="text" id="p-where" placeholder="📍 어디서? (예: 급식실, 복도, 교실)">
+            <textarea id="p-content" rows="3" placeholder="✏️ 무엇을 했나요? 칭찬 내용을 자세히 적어주세요!"></textarea>
             <button class="btn-main" onclick="window.submitPraise()">제보하기 ✉️</button>
         </div>
     </div>
@@ -660,6 +737,7 @@
     </div>
 </section>
 
+<!-- 오늘 하루 -->
 <section id="today" class="content-section">
     <div class="sub-nav">
         <button class="active" onclick="window.showSubTab(this,'today','t-form')">오늘의 질문</button>
@@ -667,7 +745,8 @@
     </div>
     <div id="t-form" class="tab-content active">
         <div class="glass-card">
-            <div id="display-date" style="text-align:center; color:var(--text-sub); font-size:0.9rem; margin-bottom:12px; font-weight:700;"></div>
+            <div id="display-date" style="text-align:center;color:var(--text-sub);font-size:0.9rem;margin-bottom:8px;font-weight:700;"></div>
+            <div style="text-align:center;margin-bottom:12px;"><span class="auto-badge">⚡ 제출 즉시 자동 공개 · +1P 자동 적립</span></div>
             <div class="q-box"><h4 id="daily-q-text">로딩 중...</h4></div>
             <div id="t-submit-area">
                 <select id="t-name"><option value="">이름 선택</option></select>
