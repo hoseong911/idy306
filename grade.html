@@ -2,450 +2,175 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>고입 성적 분석 대시보드</title>
+    <title>인천 고입 성적 산출 시스템 (2027 지침)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
-
-        body {
-            font-family: 'Noto Sans KR', sans-serif;
-            background: linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%);
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-            color: #333;
-        }
-
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-
-        /* 글래스모피즘 UI 디자인 */
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.4);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
-            padding: 25px;
-            margin-bottom: 20px;
-        }
-
-        h1 {
-            text-align: center;
-            color: #2c3e50;
-            font-weight: 700;
-            margin-top: 0;
-        }
-
-        .upload-section {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-        }
-
-        .upload-box {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .upload-box label {
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 5px;
-            color: #444;
-        }
-
-        input[type="file"] {
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.5);
-            border-radius: 8px;
-            border: 1px solid #fff;
-            outline: none;
-            cursor: pointer;
-        }
-
-        .student-select {
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-            border-radius: 10px;
-            border: 1px solid #fff;
-            background: rgba(255, 255, 255, 0.7);
-            margin-top: 15px;
-            font-family: inherit;
-        }
-
-        /* 탭 메뉴 */
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .tab-btn {
-            flex: 1;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.5);
-            border: 1px solid #fff;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 15px;
-            transition: all 0.3s ease;
-        }
-
-        .tab-btn.active {
-            background: #fff;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-            color: #4a90e2;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        /* 데이터 표시 영역 */
-        .data-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-        }
-
-        .data-card {
-            background: rgba(255, 255, 255, 0.6);
-            padding: 15px;
-            border-radius: 12px;
-            border: 1px solid #fff;
-        }
-
-        .data-card h3 {
-            margin-top: 0;
-            font-size: 16px;
-            color: #2c3e50;
-            border-bottom: 2px solid #a6c1ee;
-            padding-bottom: 5px;
-            display: inline-block;
-        }
-
-        .score-value {
-            font-size: 24px;
-            font-weight: 700;
-            color: #4a90e2;
-        }
-
-        canvas {
-            width: 100% !important;
-            max-height: 400px;
-        }
+        body { font-family: 'Noto Sans KR', sans-serif; background: linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%); min-height: 100vh; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .glass-panel { background: rgba(255, 255, 255, 0.4); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.3); padding: 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.07); }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { flex: 1; padding: 12px; background: rgba(255, 255, 255, 0.5); border: 1px solid #fff; border-radius: 10px; cursor: pointer; font-weight: 700; }
+        .tab-btn.active { background: #fff; color: #4a90e2; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .score-box { font-size: 28px; font-weight: bold; color: #4a90e2; }
+        table { width: 100%; border-collapse: collapse; background: rgba(255, 255, 255, 0.7); border-radius: 10px; overflow: hidden; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: center; }
+        th { background: rgba(166, 193, 238, 0.5); }
+        input[type="number"] { width: 50px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="glass-panel">
-        <h1>인천동양중학교 3학년 6반 고입 내신 대시보드</h1>
-        
-        <div class="upload-section">
-            <div class="upload-box">
-                <label>📚 교과 성적 (교과.xlsx)</label>
-                <input type="file" id="fileSubject" accept=".xlsx, .csv" onchange="handleFile(event, 'subject')">
-            </div>
-            <div class="upload-box">
-                <label>⏰ 출결 상황 (출결.xlsx)</label>
-                <input type="file" id="fileAttendance" accept=".xlsx, .csv" onchange="handleFile(event, 'attendance')">
-            </div>
-            <div class="upload-box">
-                <label>🤝 봉사 활동 (봉사.xlsx)</label>
-                <input type="file" id="fileVolunteer" accept=".xlsx, .csv" onchange="handleFile(event, 'volunteer')">
-            </div>
-            <div class="upload-box">
-                <label>🏆 수상 경력 (수상.xlsx)</label>
-                <input type="file" id="fileAward" accept=".xlsx, .csv" onchange="handleFile(event, 'award')">
-            </div>
+        <h1>인천동양중 3-6 고입 성적 산출 (2027 지침)</h1>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <label>교과.xlsx <input type="file" onchange="loadFile(event, 'sub')"></label>
+            <label>출결.xlsx <input type="file" onchange="loadFile(event, 'att')"></label>
+            <label>봉사.xlsx <input type="file" onchange="loadFile(event, 'vol')"></label>
+            <label>수상.xlsx <input type="file" onchange="loadFile(event, 'awd')"></label>
         </div>
-
-        <select class="student-select" id="studentSelect" onchange="renderDashboard()">
-            <option value="">학생을 선택하세요 (파일을 업로드하면 목록이 생성됩니다)</option>
-        </select>
+        <button onclick="processData()" style="width:100%; padding:15px; margin-top:15px; cursor:pointer;">🔄 데이터 분석 및 점수 산출</button>
+        <select id="studentSelect" onchange="updateView()" style="width:100%; padding:10px; margin-top:10px; display:none;"></select>
     </div>
 
-    <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('tab1')">1. 내신 교과 성적</button>
-        <button class="tab-btn" onclick="switchTab('tab2')">2. 내신 비교과 성적</button>
-        <button class="tab-btn" onclick="switchTab('tab3')">3. 성적 변화 분석</button>
+    <div class="tabs" id="tabs" style="display:none;">
+        <button class="tab-btn active" onclick="setTab('t1')">교과(240점)</button>
+        <button class="tab-btn" onclick="setTab('t2')">비교과(60점)</button>
+        <button class="tab-btn" onclick="setTab('t3')">성적분석</button>
+        <button class="tab-btn" onclick="setTab('tAdmin')" style="background:#ffdada;">관리자(수정)</button>
     </div>
 
-    <div class="glass-panel">
-        <div id="tab1" class="tab-content active">
-            <h2>평균 평점 산출 (개인별)</h2>
-            <p>※ 교과 성취도(A~E)를 5~1점으로 환산하여 계산한 단순 평균 평점입니다. (P 패스과목 제외)</p>
-            <div class="data-grid">
-                <div class="data-card">
-                    <h3>1, 2학년 교과 평균 평점</h3>
-                    <div id="gpa12" class="score-value">-</div>
-                </div>
-                <div class="data-card">
-                    <h3>3학년 교과 평균 평점 (진행중)</h3>
-                    <div id="gpa3" class="score-value">-</div>
-                </div>
+    <div class="glass-panel" id="mainContent" style="display:none;">
+        <div id="t1" class="tab-content active">
+            <h2>교과 평균 평점 (인천식)</h2>
+            <div id="gpaResult" class="score-box">-</div>
+        </div>
+        <div id="t2" class="tab-content">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div><h3>출결 (21점)</h3><div id="attS" class="score-box">-</div></div>
+                <div><h3>행동발달 (9점)</h3><div id="hbS" class="score-box">-</div></div>
+                <div><h3>자·동·진 (15점)</h3><div id="cdjS" class="score-box">-</div></div>
+                <div><h3>봉사활동 (15점)</h3><div id="volS" class="score-box">-</div></div>
             </div>
         </div>
-
-        <div id="tab2" class="tab-content">
-            <h2>비교과 이력 및 산출</h2>
-            <div class="data-grid">
-                <div class="data-card">
-                    <h3>출결 상황 (미인정 결석)</h3>
-                    <div id="absentScore" class="score-value">-</div>
-                    <p style="font-size: 12px; color:#666;" id="absentDetail">미인정 결석 0일, 지각/조퇴/결과 0회</p>
-                </div>
-                <div class="data-card">
-                    <h3>봉사 시간</h3>
-                    <div id="volScore" class="score-value">-</div>
-                </div>
-                <div class="data-card">
-                    <h3>수상 경력</h3>
-                    <div id="awardScore" class="score-value">-</div>
-                </div>
-                <div class="data-card">
-                    <h3>창체 / 행발 (기본점수 자동세팅)</h3>
-                    <div class="score-value">만점 부여됨</div>
-                    <p style="font-size: 12px; color:#666;">창의적 체험활동, 행동특성 및 종합의견 영역은 자동으로 상한 만점으로 처리되었습니다.</p>
-                </div>
-            </div>
-        </div>
-
-        <div id="tab3" class="tab-content">
-            <h2>학기별 교과 성취도 변화 추이</h2>
-            <canvas id="trendChart"></canvas>
+        <div id="t3" class="tab-content"><canvas id="chart"></canvas></div>
+        <div id="tAdmin" class="tab-content">
+            <table id="adminTable">
+                <thead><tr><th>성명</th><th>출결</th><th>행발가산</th><th>창체가산</th><th>봉사가산</th><th>저장</th></tr></thead>
+                <tbody></tbody>
+            </table>
         </div>
     </div>
 </div>
 
 <script>
-    // 통합 데이터 저장소
-    const rawData = {
-        subject: [],
-        attendance: [],
-        volunteer: [],
-        award: []
+let raw = { sub:[], att:[], vol:[], awd:[] };
+let data = {};
+let chart = null;
+
+function loadFile(e, k) {
+    const r = new FileReader();
+    r.onload = (ev) => {
+        const b = XLSX.read(ev.target.result, {type:'binary'});
+        raw[k] = XLSX.utils.sheet_to_json(b.Sheets[b.SheetNames[0]]).map(r => {
+            let n = {}; for(let key in r) n[key.replace(/\s+/g,'')] = r[key]; return n;
+        });
     };
+    r.readAsBinaryString(e.target.files[0]);
+}
 
-    let chartInstance = null;
+function processData() {
+    const names = [...new Set(raw.sub.map(r => r.성명))].filter(n => n && n !== '성명');
+    names.forEach(name => {
+        // 1. 교과 산출
+        const mySub = raw.sub.filter(r => r.성명 === name);
+        let s12=0, c12=0, s3=0, c3=0, trend=[];
+        mySub.forEach(r => {
+            const m = String(r['성취도(수강자수)']||'').match(/[A-E]/);
+            if(!m) return;
+            const sc = {A:5,B:4,C:3,D:2,E:1}[m[0]];
+            if(r.학년 < 3) { s12+=sc; c12++; } else { s3+=sc; c3++; }
+        });
 
-    // 탭 전환 로직
-    function switchTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        // 2. 출결 산출 (인천 21점 기준)
+        const myAtt = raw.att.filter(r => r.성명 === name);
+        let abs=0, etc=0;
+        myAtt.forEach(r => {
+            const v = Object.values(r);
+            abs += Number(r.미인정 || v[5] || 0);
+            etc += Number(v[8]||0) + Number(v[11]||0) + Number(v[14]||0);
+        });
+        const totalAbs = abs + Math.floor(etc/3);
+        const attScore = totalAbs >= 21 ? 10 : Math.max(10, 21 - Math.floor(totalAbs/2));
+
+        // 3. 봉사 시간 점수 (1학년 만점, 2/3학년 기준)
+        const myVol = raw.vol.filter(r => r.성명 === name);
+        let vSc = 4; // 1학년 기본 만점
+        [2,3].forEach(g => {
+            const hr = myVol.filter(v => v.학년 == g).reduce((a,b) => a + Number(b.시간||0), 0);
+            vSc += (hr >= 20 ? 4 : hr >= 11 ? 3 : 2);
+        });
+
+        // 4. 가산점 (수상경력 기반 1차 추출)
+        const myAwd = raw.awd.filter(r => r.성명 === name);
+        const hasA = (t) => myAwd.some(a => a.수상명.includes(t)) ? 1 : 0;
         
-        document.getElementById(tabId).classList.add('active');
-        event.currentTarget.classList.add('active');
-    }
-
-    // 엑셀 파일 읽기 로직
-    function handleFile(event, type) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, {type: 'array'});
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            
-            // JSON으로 변환 (헤더 포함)
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-            
-            // 공백이 포함된 키(헤더)를 공백 없는 키로 정제하여 저장
-            const cleanedData = jsonData.map(row => {
-                const newRow = {};
-                for (let key in row) {
-                    newRow[key.replace(/\s+/g, '')] = row[key];
-                }
-                return newRow;
-            });
-
-            rawData[type] = cleanedData;
-            updateStudentDropdown();
-            alert(`${type} 데이터 로드 완료!`);
+        data[name] = {
+            gpa12: c12 ? (s12/c12).toFixed(2) : '-', gpa3: c3 ? (s3/c3).toFixed(2) : '-',
+            att: attScore,
+            hb_g: 2*3, hb_a: Math.min(1, myAwd.length * 0.5), // 예시: 상장당 0.5
+            cdj_g: 2*3, cdj_a: Math.min(3, myAwd.length * 1.0),
+            vol_t: vSc, vol_a: hasA('봉사') ? 1 : 0
         };
-        reader.readAsArrayBuffer(file);
+    });
+
+    const sel = document.getElementById('studentSelect');
+    sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+    sel.style.display = 'block';
+    document.getElementById('tabs').style.display = 'flex';
+    document.getElementById('mainContent').style.display = 'block';
+    renderAdmin();
+}
+
+function updateView() {
+    const n = document.getElementById('studentSelect').value;
+    const d = data[n];
+    document.getElementById('gpaResult').innerText = `1,2학년: ${d.gpa12} / 3학년: ${d.gpa3}`;
+    document.getElementById('attS').innerText = d.att + " / 21";
+    document.getElementById('hbS').innerText = (d.hb_g + d.hb_a).toFixed(1) + " / 9";
+    document.getElementById('cdjS').innerText = (d.cdj_g + d.cdj_a).toFixed(1) + " / 15";
+    document.getElementById('volS').innerText = (d.vol_t + d.vol_a).toFixed(1) + " / 15";
+}
+
+function renderAdmin() {
+    const b = document.querySelector('#adminTable tbody'); b.innerHTML = '';
+    for(let n in data) {
+        const d = data[n];
+        b.innerHTML += `<tr><td>${n}</td><td>${d.att}</td>
+            <td><input type="number" value="${d.hb_a}" id="ha_${n}"></td>
+            <td><input type="number" value="${d.cdj_a}" id="ca_${n}"></td>
+            <td><input type="number" value="${d.vol_a}" id="va_${n}"></td>
+            <td><button onclick="save('${n}')">💾</button></td></tr>`;
     }
+}
 
-    // 학생 목록 추출 및 드롭다운 업데이트
-    function updateStudentDropdown() {
-        const studentSet = new Set();
-        
-        // 모든 데이터 소스에서 '성명' 추출
-        Object.values(rawData).forEach(dataset => {
-            dataset.forEach(row => {
-                if (row['성명'] && row['성명'].length > 1 && row['성명'] !== '성명') {
-                    studentSet.add(row['성명']);
-                }
-            });
-        });
+function save(n) {
+    data[n].hb_a = Number(document.getElementById(`ha_${n}`).value);
+    data[n].cdj_a = Number(document.getElementById(`ca_${n}`).value);
+    data[n].vol_a = Number(document.getElementById(`va_${n}`).value);
+    alert('저장됨'); updateView();
+}
 
-        const select = document.getElementById('studentSelect');
-        select.innerHTML = '<option value="">학생을 선택하세요</option>';
-        
-        Array.from(studentSet).sort().forEach(name => {
-            const option = document.createElement('option');
-            option.value = name;
-            option.textContent = name;
-            select.appendChild(option);
-        });
-    }
-
-    // 대시보드 수치 및 그래프 렌더링
-    function renderDashboard() {
-        const studentName = document.getElementById('studentSelect').value;
-        if (!studentName) return;
-
-        calculateGPA(studentName);
-        calculateNonSubject(studentName);
-        drawTrendChart(studentName);
-    }
-
-    // [Tab 1] 교과 평균 평점 계산 (A=5, B=4, C=3, D=2, E=1)
-    function calculateGPA(studentName) {
-        const subjects = rawData.subject.filter(r => r['성명'] === studentName);
-        
-        let sum12 = 0, count12 = 0;
-        let sum3 = 0, count3 = 0;
-
-        subjects.forEach(row => {
-            const gradeStr = String(row['성취도(수강자수)'] || '');
-            const match = gradeStr.match(/[A-E]/);
-            if (!match) return; // P(패스) 또는 빈칸 제외
-
-            const grade = match[0];
-            const score = { 'A':5, 'B':4, 'C':3, 'D':2, 'E':1 }[grade];
-            
-            if (row['학년'] === 1 || row['학년'] === '1' || row['학년'] === 2 || row['학년'] === '2') {
-                sum12 += score;
-                count12++;
-            } else if (row['학년'] === 3 || row['학년'] === '3') {
-                sum3 += score;
-                count3++;
-            }
-        });
-
-        const gpa12 = count12 > 0 ? (sum12 / count12).toFixed(2) : '-';
-        const gpa3 = count3 > 0 ? (sum3 / count3).toFixed(2) : '성적 없음';
-
-        document.getElementById('gpa12').textContent = gpa12;
-        document.getElementById('gpa3').textContent = gpa3;
-    }
-
-    // [Tab 2] 비교과 수치 계산
-    function calculateNonSubject(studentName) {
-        // 1. 출결 (결석 및 지각/조퇴/결과 합산 로직)
-        const attendance = rawData.attendance.filter(r => r['성명'] === studentName);
-        let unexcusedAbsence = 0; // 미인정 결석
-        let unexcusedOthers = 0; // 미인정 지각/조퇴/결과
-
-        attendance.forEach(row => {
-            // NEIS 엑셀 출력 양식의 병합 셀 특성상, 키 이름이 __EMPTY 등으로 변환될 수 있습니다.
-            // 정확한 추출을 위해 row의 값들을 순회하여 미인정 숫자를 추산합니다. (엑셀 원본 양식에 맞춰 조정 필요)
-            // 기본 틀로써 출석 데이터 배열 내 숫자를 합산하는 방식으로 구현해두었습니다.
-            const vals = Object.values(row);
-            if (row['학년'] === 1 || row['학년'] === 2 || row['학년'] === 3 || row['학년'] === '1' || row['학년'] === '2' || row['학년'] === '3') {
-                unexcusedAbsence += Number(row['미인정'] || vals[5] || 0); 
-                unexcusedOthers += Number(vals[8] || 0) + Number(vals[11] || 0) + Number(vals[14] || 0); 
-            }
-        });
-        
-        const totalAbsence = unexcusedAbsence + Math.floor(unexcusedOthers / 3);
-        document.getElementById('absentScore').textContent = `${totalAbsence}일 감점대상`;
-        document.getElementById('absentDetail').textContent = `순수 미인정 결석: ${unexcusedAbsence}일, 기타 미인정: ${unexcusedOthers}회`;
-
-        // 2. 봉사시간
-        const volunteer = rawData.volunteer.filter(r => r['성명'] === studentName);
-        let totalVolHours = 0;
-        volunteer.forEach(row => {
-            totalVolHours += Number(row['시간'] || 0);
-        });
-        document.getElementById('volScore').textContent = `총 ${totalVolHours}시간`;
-
-        // 3. 수상경력
-        const awards = rawData.award.filter(r => r['성명'] === studentName);
-        document.getElementById('awardScore').textContent = `총 ${awards.length}회 수상`;
-    }
-
-    // [Tab 3] 성적 변화 추이 그래프
-    function drawTrendChart(studentName) {
-        const subjects = rawData.subject.filter(r => r['성명'] === studentName);
-        
-        const semesters = ['1학년 1학기', '1학년 2학기', '2학년 1학기', '2학년 2학기', '3학년 1학기'];
-        const semesterScores = [0, 0, 0, 0, 0];
-        const semesterCounts = [0, 0, 0, 0, 0];
-
-        subjects.forEach(row => {
-            const gradeStr = String(row['성취도(수강자수)'] || '');
-            const match = gradeStr.match(/[A-E]/);
-            if (!match) return;
-
-            const score = { 'A':5, 'B':4, 'C':3, 'D':2, 'E':1 }[match[0]];
-            const grade = Number(row['학년']);
-            const term = Number(row['학기']);
-
-            let index = -1;
-            if (grade === 1 && term === 1) index = 0;
-            else if (grade === 1 && term === 2) index = 1;
-            else if (grade === 2 && term === 1) index = 2;
-            else if (grade === 2 && term === 2) index = 3;
-            else if (grade === 3 && term === 1) index = 4;
-
-            if (index !== -1) {
-                semesterScores[index] += score;
-                semesterCounts[index]++;
-            }
-        });
-
-        const averages = semesterScores.map((sum, i) => semesterCounts[i] > 0 ? (sum / semesterCounts[i]).toFixed(2) : null);
-
-        const ctx = document.getElementById('trendChart').getContext('2d');
-        if (chartInstance) chartInstance.destroy();
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: semesters,
-                datasets: [{
-                    label: '학기별 평균 평점 추이 (5.0 만점)',
-                    data: averages,
-                    borderColor: '#a6c1ee',
-                    backgroundColor: 'rgba(166, 193, 238, 0.3)',
-                    borderWidth: 3,
-                    pointBackgroundColor: '#fbc2eb',
-                    pointRadius: 6,
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        min: 1,
-                        max: 5,
-                        ticks: { stepSize: 1 }
-                    }
-                }
-            }
-        });
-    }
+function setTab(id) {
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+}
 </script>
-
 </body>
 </html>
