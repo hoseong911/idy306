@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>306 WORLD Admin</title>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <title>306 WORLD — 관리자</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 
     <script>
-        const PW_TEACHER  = btoa("ghtjd12!@");
-        const PW_STUDENT  = btoa("3gkrsus6qks!");
-
+        const PW_TEACHER = btoa("ghtjd12!@");
+        const PW_STUDENT = btoa("3gkrsus6qks!");
         window.adminRole = null;
 
         window.tryAdminLogin = () => {
@@ -23,7 +24,7 @@
                 window.adminRole = 'student';
                 document.getElementById('admin-modal').classList.remove('open');
                 applyRoleUI();
-                window.showToast("회장단 모드로 접속했어요 📅 일정만 수정할 수 있어요.");
+                window.showToast("회장단 모드로 접속했어요. 일정만 수정 가능해요.");
             } else {
                 document.getElementById('admin-pw-error').style.display = 'block';
                 document.getElementById('admin-pw-input').classList.add('shake');
@@ -39,10 +40,9 @@
         }
 
         window.showAdminTab = (btn, tabId) => {
-            const teacherOnlyTabs = ['adm-students','adm-mileage','adm-praise','adm-today','adm-cert'];
-            if (window.adminRole === 'student' && teacherOnlyTabs.includes(tabId)) {
+            const teacherOnly = ['adm-students','adm-mileage','adm-praise','adm-today','adm-cert'];
+            if (window.adminRole === 'student' && teacherOnly.includes(tabId))
                 return window.showToast("접근 권한이 없어요.", 'error');
-            }
             document.querySelectorAll('.adm-tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.adm-tab-content').forEach(t => t.classList.remove('active'));
             if (btn) btn.classList.add('active');
@@ -79,20 +79,15 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
+        let globalData = {}, studentList = [];
 
-        let globalData = {};
-        let studentList = [];
-
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', e => {
             if (e.key === 'Enter' && document.getElementById('admin-modal').classList.contains('open')) window.tryAdminLogin();
         });
 
-        onValue(ref(db, 'class306'), (snapshot) => {
+        onValue(ref(db, 'class306'), snapshot => {
             globalData = snapshot.val() || {};
-            studentList = [];
-            if (globalData.students) {
-                studentList = Object.values(globalData.students).sort((a, b) => a.num - b.num);
-            }
+            studentList = globalData.students ? Object.values(globalData.students).sort((a,b) => a.num - b.num) : [];
             renderAdminStudents(globalData.students || {});
             renderAdminHome(globalData.calendar || {});
             renderAdminMileage(globalData);
@@ -101,20 +96,17 @@
             renderAdminStudyCert(globalData.studyCert || {});
         });
 
-        // ====================== 학생 명단 관리 ======================
+        // ── 학생 명단 ──────────────────────────────────────────────
         let editingOriginalNum = null;
 
         window.saveStudent = () => {
             const num = parseInt(document.getElementById('adm-std-num').value);
             const name = document.getElementById('adm-std-name').value.trim();
-            if (!num || !name) return window.showToast('번호와 이름을 모두 입력하세요.', 'error');
-
-            // 번호가 변경됐거나 key가 다른 경우 기존 항목 삭제
-            if (editingOriginalNum !== null && String(editingOriginalNum) !== String(num)) {
+            if (!num || !name) return window.showToast('번호와 이름을 입력하세요.', 'error');
+            if (editingOriginalNum !== null && String(editingOriginalNum) !== String(num))
                 remove(ref(db, `class306/students/${editingOriginalNum}`));
-            }
             set(ref(db, `class306/students/${num}`), { num, name });
-            window.showToast(`${num}번 ${name} 저장 완료!`);
+            window.showToast(`${num}번 ${name} 저장 완료`);
             document.getElementById('adm-std-num').value = '';
             document.getElementById('adm-std-name').value = '';
             document.getElementById('adm-std-btn').innerText = '저장';
@@ -122,145 +114,135 @@
         };
 
         window.editStudent = (firebaseKey, num, name) => {
-            editingOriginalNum = firebaseKey; // Firebase 실제 키로 저장
+            editingOriginalNum = firebaseKey;
             document.getElementById('adm-std-num').value = num !== null ? num : '';
             document.getElementById('adm-std-name').value = name || '';
             document.getElementById('adm-std-btn').innerText = '수정 완료';
             document.getElementById('adm-std-name').focus();
         };
 
-        // Firebase 실제 키(firebaseKey)로 삭제 — num이 undefined여도 동작
         window.deleteStudent = (firebaseKey, displayNum, name) => {
-            if (confirm(`[${displayNum}번] ${name} 학생을 명단에서 삭제하시겠습니까?`)) {
+            if (confirm(`[${displayNum}번] ${name} 학생을 삭제하시겠습니까?`))
                 remove(ref(db, `class306/students/${firebaseKey}`))
-                    .then(() => window.showToast('명단에서 삭제되었습니다.'))
-                    .catch(() => window.showToast('삭제 실패! 권한을 확인하세요.', 'error'));
-            }
+                    .then(() => window.showToast('삭제되었습니다.'))
+                    .catch(() => window.showToast('삭제 실패', 'error'));
         };
 
         function renderAdminStudents(studentsObj) {
             const list = document.getElementById('adm-std-list');
             if (!list) return;
             list.innerHTML = '';
-
-            // Object.entries로 Firebase 실제 키도 함께 가져오기
             const entries = Object.entries(studentsObj)
-                .map(([key, val]) => {
-                    if (!val || typeof val !== 'object') return { key, num: undefined, name: undefined };
-                    return { key, num: val.num, name: val.name };
-                })
-                .sort((a, b) => (Number(a.num) || 0) - (Number(b.num) || 0));
-
-            if (entries.length === 0) {
-                list.innerHTML = "<p class='empty-msg'>등록된 학생이 없습니다.</p>";
-                return;
-            }
+                .map(([key, val]) => ({ key, num: val?.num, name: val?.name }))
+                .sort((a, b) => (Number(a.num)||0) - (Number(b.num)||0));
+            if (entries.length === 0) { list.innerHTML = "<p class='empty-msg'>등록된 학생이 없습니다.</p>"; return; }
             entries.forEach(s => {
-                const displayNum = s.num !== undefined ? s.num : '?';
-                const displayName = s.name !== undefined ? s.name : '(이름 없음)';
-                const safeKey = String(s.key);
-                const safeName = displayName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const dn = s.num ?? '?', nm = s.name ?? '(이름 없음)';
+                const sk = String(s.key), sn = nm.replace(/'/g, "\\'");
                 list.innerHTML += `
-                    <div class="adm-cal-item">
-                        <div class="adm-cal-info" style="flex:1;">
-                            <span class="adm-cal-date" style="width:36px;display:inline-block;text-align:center;">${displayNum}</span>
-                            <span class="adm-cal-title" style="font-weight:800;">${displayName}</span>
-
-                        </div>
-                        <div style="display:flex;gap:6px;">
-                            <button class="btn-approve" style="background:#64748B;" onclick="window.editStudent('${safeKey}',${displayNum === '?' ? 'null' : displayNum},'${safeName}')">수정</button>
-                            <button class="btn-danger-sm" onclick="window.deleteStudent('${safeKey}','${displayNum}','${safeName}')">삭제</button>
-                        </div>
-                    </div>`;
+                <div class="row-item">
+                    <div class="row-item-left">
+                        <span class="num-badge">${dn}</span>
+                        <span class="row-name">${nm}</span>
+                    </div>
+                    <div class="row-item-actions">
+                        <button class="btn-sm btn-ghost" onclick="window.editStudent('${sk}',${dn==='?'?'null':dn},'${sn}')">수정</button>
+                        <button class="btn-sm btn-danger" onclick="window.deleteStudent('${sk}','${dn}','${sn}')">삭제</button>
+                    </div>
+                </div>`;
             });
         }
 
-        // ====================== 레벨 ======================
+        // ── 레벨 ──────────────────────────────────────────────────
         function getLevel(score) {
-            let level = 1, required = 10, accumulated = 0;
-            while (score >= accumulated + required) { accumulated += required; level++; required += 10; }
-            return { level, progress: score - accumulated, nextRequired: required };
+            let level=1, required=10, accumulated=0;
+            while(score >= accumulated+required){accumulated+=required;level++;required+=10;}
+            return {level, progress:score-accumulated, nextRequired:required};
         }
 
-        // ====================== 스터디 체크 관리 ======================
+        // ── 스터디 체크 ──────────────────────────────────────────
         function renderAdminStudyCert(certObj) {
             const container = document.getElementById('adm-cert-list');
             if (!container) return;
             container.innerHTML = '';
-            const certs = Object.entries(certObj).sort((a, b) => new Date(b[1].time) - new Date(a[1].time));
-            const totalPass = certs.filter(([,c]) => c.result === 'pass').length;
-            const totalFail = certs.filter(([,c]) => c.result === 'fail').length;
-            const totalMileage = certs.reduce((s, [,c]) => s + (c.mileage || 0), 0);
+            const certs = Object.entries(certObj).sort((a,b) => new Date(b[1].time) - new Date(a[1].time));
+            const totalPass = certs.filter(([,c]) => c.result==='pass').length;
+            const totalFail = certs.filter(([,c]) => c.result==='fail').length;
+            const totalMileage = certs.reduce((s,[,c]) => s+(c.mileage||0), 0);
             document.getElementById('adm-cert-stats').innerHTML =
-                `총 체크: <b>${certs.length}건</b> · 통과: <b>${totalPass}</b> · 반려: <b>${totalFail}</b> · 적립: <b>${totalMileage}P</b>`;
-
+                `<span class="stat-item">총 <b>${certs.length}건</b></span><span class="stat-sep">·</span><span class="stat-item">통과 <b class="c-green">${totalPass}</b></span><span class="stat-sep">·</span><span class="stat-item">반려 <b class="c-red">${totalFail}</b></span><span class="stat-sep">·</span><span class="stat-item">적립 <b class="c-indigo">${totalMileage}P</b></span>`;
             if (certs.length === 0) return container.innerHTML = "<p class='empty-msg'>체크 기록이 없습니다.</p>";
-            if (certs.length > 50) {
-                container.innerHTML += `<p style="text-align:center;font-size:0.85rem;color:#94A3B8;padding:8px 0;">최근 50건만 표시됩니다 (전체 ${certs.length}건)</p>`;
-            }
-            certs.slice(0, 50).forEach(([id, c]) => {
+            if (certs.length > 50) container.innerHTML += `<p class="note-text">최근 50건만 표시 (전체 ${certs.length}건)</p>`;
+            certs.slice(0,50).forEach(([id,c]) => {
                 container.innerHTML += `
-                    <div class="adm-cert-item">
-                        <div class="adm-cert-info">
-                            <span class="cert-badge ${c.result}">${c.result === 'pass' ? '✅ 통과' : '❌ 반려'}</span>
-                            <b>${c.name}</b> · ${c.date}
-                            ${c.studyContent ? `<p style="color:var(--study);font-weight:700;">"${c.studyContent}"</p>` : ''}
-                            <p>${c.reason}${c.photoDate && c.photoDate !== '없음' ? ` (사진날짜: ${c.photoDate})` : ''}</p>
+                <div class="row-item">
+                    <div class="row-item-left" style="flex-direction:column;align-items:flex-start;gap:4px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span class="status-badge ${c.result==='pass'?'badge-pass':'badge-fail'}">${c.result==='pass'?'통과':'반려'}</span>
+                            <b class="row-name">${c.name}</b>
+                            <span class="row-meta">${c.date}</span>
                         </div>
-                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
-                            <span style="font-weight:800;color:var(--primary);font-size:0.85rem;">${c.result === 'pass' ? '+' + c.mileage + 'P' : '-'}</span>
-                            ${c.photoURL ? `<a href="${c.photoURL}" target="_blank" style="font-size:0.75rem;color:#888;">사진보기</a>` : ''}
-                            <button class="btn-danger-sm" onclick="window.deleteCertRecord('${id}','${c.name}',${c.mileage||0},'${c.result}')">삭제</button>
-                        </div>
-                    </div>`;
+                        ${c.studyContent ? `<span class="row-subject">"${c.studyContent}"</span>` : ''}
+                        <span class="row-meta">${c.reason}${c.photoDate&&c.photoDate!=='없음'?` (사진: ${c.photoDate})`:''}</span>
+                    </div>
+                    <div class="row-item-actions">
+                        <span class="score-pill ${c.result==='pass'?'score-pos':'score-neg'}">${c.result==='pass'?'+'+c.mileage+'P':'—'}</span>
+                        ${c.photoURL?`<a href="${c.photoURL}" target="_blank" class="btn-sm btn-ghost">사진</a>`:''}
+                        ${c.result==='fail'?`<button class="btn-sm btn-primary" onclick="window.manualPassCert('${id}','${c.name}')">승인</button>`:''}
+                        <button class="btn-sm btn-danger" onclick="window.deleteCertRecord('${id}','${c.name}',${c.mileage||0},'${c.result}')">삭제</button>
+                    </div>
+                </div>`;
             });
         }
 
         window.deleteCertRecord = (id, name, mileage, result) => {
-            const msg = result === 'pass'
-                ? `이 기록을 삭제하면 ${name}에게서 ${mileage}P 차감됩니다. 삭제하시겠습니까?`
-                : `이 체크 반려 기록을 삭제하시겠습니까?`;
+            const msg = result==='pass' ? `삭제 시 ${name}에서 ${mileage}P 차감됩니다. 삭제할까요?` : `이 반려 기록을 삭제할까요?`;
             if (!confirm(msg)) return;
             remove(ref(db, `class306/studyCert/${id}`));
-            if (result === 'pass' && mileage > 0) {
-                Promise.all([
-                    get(ref(db, `class306/mileage/${name}`)),
-                    get(ref(db, `class306/totalEarned/${name}`))
-                ]).then(([mSnap, eSnap]) => {
-                    const cur = mSnap.val() || 0;
-                    const earned = eSnap.val() || cur;
-                    set(ref(db, `class306/mileage/${name}`), Math.max(0, cur - mileage));
-                    set(ref(db, `class306/totalEarned/${name}`), Math.max(0, earned - mileage));
-                    window.showToast(`삭제 완료! ${name} -${mileage}P 차감`);
+            if (result==='pass' && mileage>0) {
+                Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]).then(([mS,eS]) => {
+                    const cur=mS.val()||0, earned=eS.val()||cur;
+                    set(ref(db,`class306/mileage/${name}`),Math.max(0,cur-mileage));
+                    set(ref(db,`class306/totalEarned/${name}`),Math.max(0,earned-mileage));
+                    window.showToast(`삭제 완료. ${name} -${mileage}P`);
                 });
-            } else {
-                window.showToast("삭제되었습니다.");
-            }
+            } else window.showToast("삭제되었습니다.");
+        };
+
+        window.manualPassCert = async (id, name) => {
+            const certMileage = globalData.config?.certMileage || 3;
+            if (!confirm(`${name}의 스터디 체크를 수동 승인할까요? +${certMileage}P 적립됩니다.`)) return;
+            await update(ref(db,`class306/studyCert/${id}`), {result:'pass', reason:'관리자 수동 승인', mileage:certMileage});
+            const [mS,eS] = await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
+            const cur=mS.val()||0, earned=eS.val()||cur;
+            await set(ref(db,`class306/mileage/${name}`),cur+certMileage);
+            await set(ref(db,`class306/totalEarned/${name}`),earned+certMileage);
+            window.showToast(`${name} 수동 승인 완료. +${certMileage}P`);
         };
 
         window.saveApiKey = () => {
             const key = document.getElementById('adm-api-key-input').value.trim();
             if (!key) return window.showToast("API 키를 입력하세요.", 'error');
-            update(ref(db, 'class306/config'), { claudeApiKey: key });
-            window.showToast("API 키가 저장되었습니다!");
+            update(ref(db,'class306/config'), {claudeApiKey: key});
+            window.showToast("API 키가 저장되었습니다.");
         };
 
-        // ====================== 홈/캘린더 ======================
+        // ── 홈/캘린더 ─────────────────────────────────────────────
         function renderAdminHome(calObj) {
             const list = document.getElementById('adm-cal-list');
             if (!list) return;
             list.innerHTML = '';
-            const sorted = Object.entries(calObj).sort((a, b) => new Date(a[1].date) - new Date(b[1].date));
+            const sorted = Object.entries(calObj).sort((a,b) => new Date(a[1].date) - new Date(b[1].date));
             if (sorted.length === 0) { list.innerHTML = "<p class='empty-msg'>등록된 일정이 없습니다.</p>"; return; }
-            sorted.forEach(([id, c]) => {
+            sorted.forEach(([id,c]) => {
                 list.innerHTML += `
-                    <div class="adm-cal-item">
-                        <div class="adm-cal-info">
-                            <span class="adm-cal-date">${c.date.slice(5)}</span>
-                            <span class="adm-cal-title">${c.title}</span>
-                        </div>
-                        <button class="btn-danger-sm" onclick="window.deleteCal('${id}')">삭제</button>
-                    </div>`;
+                <div class="row-item">
+                    <div class="row-item-left">
+                        <span class="cal-date-tag">${c.date.slice(5)}</span>
+                        <span class="row-name">${c.title}</span>
+                    </div>
+                    <button class="btn-sm btn-danger" onclick="window.deleteCal('${id}')">삭제</button>
+                </div>`;
             });
         }
 
@@ -268,24 +250,18 @@
             const date = document.getElementById('adm-cal-date').value;
             const title = document.getElementById('adm-cal-title').value.trim();
             if (!date || !title) return window.showToast("날짜와 제목을 입력하세요.", 'error');
-            push(ref(db, 'class306/calendar'), { date, title });
+            push(ref(db,'class306/calendar'), {date, title});
             document.getElementById('adm-cal-date').value = '';
             document.getElementById('adm-cal-title').value = '';
-            window.showToast("일정이 등록되었습니다!");
+            window.showToast("일정이 등록되었습니다.");
         };
-        window.deleteCal = (id) => {
-            if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db, `class306/calendar/${id}`));
-        };
+        window.deleteCal = (id) => { if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db,`class306/calendar/${id}`)); };
 
-        // ====================== 마일리지 ======================
+        // ── 마일리지 ──────────────────────────────────────────────
         function parseReasons(text) {
-            const lines = (text || "").split('\n').map(l => l.trim()).filter(Boolean);
-            const result = [];
-            lines.forEach(line => {
-                const match = line.match(/^(.+?):\s*\+(\d+)P$/);
-                if (match) result.push({ label: match[1].trim(), score: parseInt(match[2]) });
-            });
-            return result;
+            return (text||"").split('\n').map(l=>l.trim()).filter(Boolean)
+                .map(line => { const m=line.match(/^(.+?):\s*\+(\d+)P$/); return m?{label:m[1].trim(),score:parseInt(m[2])}:null; })
+                .filter(Boolean);
         }
 
         function updateReasonDropdowns() {
@@ -293,507 +269,981 @@
             const sel = document.getElementById('adm-reason-select');
             if (!sel) return;
             sel.innerHTML = '<option value="">사유 선택</option>';
-            reasons.forEach(r => { sel.innerHTML += `<option value="${r.label}" data-score="${r.score}">${r.label} (+${r.score}P)</option>`; });
+            reasons.forEach(r => sel.innerHTML += `<option value="${r.label}" data-score="${r.score}">${r.label} (+${r.score}P)</option>`);
             sel.innerHTML += '<option value="__other__">기타 (직접 입력)</option>';
         }
 
         window.onReasonChange = (selectId, scoreId, customId) => {
-            const sel = document.getElementById(selectId);
-            const scoreEl = document.getElementById(scoreId);
-            const customEl = document.getElementById(customId);
-            const chosen = sel.options[sel.selectedIndex];
-            if (sel.value === '__other__') {
-                customEl.style.display = 'block'; scoreEl.value = ''; scoreEl.readOnly = false;
-            } else if (sel.value) {
-                customEl.style.display = 'none'; scoreEl.value = chosen.dataset.score; scoreEl.readOnly = true;
-            } else {
-                customEl.style.display = 'none'; scoreEl.value = ''; scoreEl.readOnly = false;
-            }
+            const sel=document.getElementById(selectId), scoreEl=document.getElementById(scoreId), customEl=document.getElementById(customId);
+            const chosen=sel.options[sel.selectedIndex];
+            if (sel.value==='__other__') { customEl.style.display='block'; scoreEl.value=''; scoreEl.readOnly=false; }
+            else if (sel.value) { customEl.style.display='none'; scoreEl.value=chosen.dataset.score; scoreEl.readOnly=true; }
+            else { customEl.style.display='none'; scoreEl.value=''; scoreEl.readOnly=false; }
         };
 
         function renderAdminMileage(data) {
-            const config = data.config || {};
-            const mileageObj = data.mileage || {};
-
-            if (!document.getElementById('adm-reasons-input').dataset.dirty) {
-                document.getElementById('adm-reasons-input').value = config.reasons || "칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +3P";
-            }
-            if (!document.getElementById('adm-personal-rewards-input').dataset.dirty) {
-                document.getElementById('adm-personal-rewards-input').value = config.personalRewards || "5P: 까까\n100P: 자리지정";
-            }
-            if (!document.getElementById('adm-group-rewards-input').dataset.dirty) {
-                document.getElementById('adm-group-rewards-input').value = config.groupRewards || "3,000P: 학급 파티";
-            }
+            const config=data.config||{}, mileageObj=data.mileage||{};
+            if (!document.getElementById('adm-reasons-input').dataset.dirty)
+                document.getElementById('adm-reasons-input').value = config.reasons||"칭찬제보: +1P\n오늘하루: +1P\n스터디 체크: +3P";
+            if (!document.getElementById('adm-personal-rewards-input').dataset.dirty)
+                document.getElementById('adm-personal-rewards-input').value = config.personalRewards||"5P: 까까\n100P: 자리지정";
+            if (!document.getElementById('adm-group-rewards-input').dataset.dirty)
+                document.getElementById('adm-group-rewards-input').value = config.groupRewards||"3,000P: 학급 파티";
             updateReasonDropdowns();
-
             const listEl = document.getElementById('adm-mileage-list');
             if (listEl) {
-                listEl.innerHTML = '';
+                listEl.innerHTML='';
                 studentList.forEach(s => {
-                    const score = mileageObj[s.name] || 0;
+                    const score=mileageObj[s.name]||0;
                     listEl.innerHTML += `
-                        <div class="adm-mileage-item">
-                            <input type="checkbox" class="student-check" value="${s.name}" id="chk-${s.name}">
-                            <label for="chk-${s.name}" class="adm-m-name">${s.num}. ${s.name}</label>
-                            <span class="adm-m-score">${score}P</span>
-                        </div>`;
+                    <div class="adm-mileage-item">
+                        <input type="checkbox" class="student-check" value="${s.name}" id="chk-${s.name}">
+                        <label for="chk-${s.name}" class="adm-m-name">${s.num}. ${s.name}</label>
+                        <span class="adm-m-score" style="font-feature-settings:'tnum';">${score}P</span>
+                    </div>`;
                 });
             }
         }
 
         function getPraiseScore() {
-            const reasons = parseReasons(globalData.config?.reasons || "");
-            const praiseRule = reasons.find(r => r.label.includes('칭찬'));
-            return praiseRule ? praiseRule.score : 1;
+            const r=parseReasons(globalData.config?.reasons||"").find(r=>r.label.includes('칭찬'));
+            return r?r.score:1;
         }
 
         window.doMileageAdd = () => {
-            const sel = document.getElementById('adm-reason-select');
-            const scoreEl = document.getElementById('adm-add-score');
-            const customEl = document.getElementById('adm-reason-custom');
-            const reason = sel.value === '__other__' ? customEl.value.trim() : sel.value;
-            const score = parseInt(scoreEl.value);
-            const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
-
+            const sel=document.getElementById('adm-reason-select'), scoreEl=document.getElementById('adm-add-score'), customEl=document.getElementById('adm-reason-custom');
+            const reason=sel.value==='__other__'?customEl.value.trim():sel.value, score=parseInt(scoreEl.value);
+            const checked=[...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb=>cb.value);
             if (!reason) return window.showToast("사유를 선택하거나 입력하세요.", 'error');
-            if (isNaN(score) || score <= 0) return window.showToast("점수를 확인하세요.", 'error');
-            if (checked.length === 0) return window.showToast("학생을 한 명 이상 선택하세요.", 'error');
+            if (isNaN(score)||score<=0) return window.showToast("점수를 확인하세요.", 'error');
+            if (checked.length===0) return window.showToast("학생을 한 명 이상 선택하세요.", 'error');
             if (!confirm(`${checked.join(', ')}에게 [${reason}] ${score}P 적립할까요?`)) return;
-
-            Promise.all([get(ref(db, 'class306/mileage')), get(ref(db, 'class306/totalEarned'))]).then(([mSnap, eSnap]) => {
-                const cur = mSnap.val() || {};
-                const earned = eSnap.val() || {};
-                const mUpdates = {}; const eUpdates = {}; const levelUps = [];
+            Promise.all([get(ref(db,'class306/mileage')),get(ref(db,'class306/totalEarned'))]).then(([mS,eS]) => {
+                const cur=mS.val()||{}, earned=eS.val()||{}, mU={}, eU={}, lu=[];
                 checked.forEach(name => {
-                    const beforeEarned = earned[name] || cur[name] || 0;
-                    const afterEarned = beforeEarned + score;
-                    mUpdates[name] = (cur[name] || 0) + score;
-                    eUpdates[name] = afterEarned;
-                    if (getLevel(beforeEarned).level < getLevel(afterEarned).level) levelUps.push({ name, lv: getLevel(afterEarned).level });
+                    const be=earned[name]||cur[name]||0, ae=be+score;
+                    mU[name]=(cur[name]||0)+score; eU[name]=ae;
+                    if(getLevel(be).level<getLevel(ae).level) lu.push({name,lv:getLevel(ae).level});
                 });
-                update(ref(db, 'class306/mileage'), mUpdates);
-                update(ref(db, 'class306/totalEarned'), eUpdates);
-
-                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
-                sel.value = '';
-                scoreEl.value = '';
-                scoreEl.readOnly = false;
-                customEl.style.display = 'none';
-                customEl.value = '';
-
-                if (levelUps.length > 0) {
-                    window.showToast(`🎉 레벨업! ${levelUps.map(l => `${l.name}(Lv.${l.lv})`).join(', ')}`, 'levelup');
-                } else {
-                    window.showToast(`${checked.length}명 +${score}P 적립 완료!`);
-                }
+                update(ref(db,'class306/mileage'),mU); update(ref(db,'class306/totalEarned'),eU);
+                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb=>cb.checked=false);
+                sel.value=''; scoreEl.value=''; scoreEl.readOnly=false; customEl.style.display='none'; customEl.value='';
+                if(lu.length>0) window.showToast(`레벨업! ${lu.map(l=>`${l.name}(Lv.${l.lv})`).join(', ')}`,'levelup');
+                else window.showToast(`${checked.length}명 +${score}P 적립 완료`);
             });
         };
 
         window.doMileageSub = () => {
-            const scoreEl = document.getElementById('adm-sub-score');
-            const score = parseInt(scoreEl.value);
-            const checked = [...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb => cb.value);
-            if (isNaN(score) || score <= 0) return window.showToast("차감 점수를 입력하세요.", 'error');
-            if (checked.length === 0) return window.showToast("학생을 선택하세요.", 'error');
+            const scoreEl=document.getElementById('adm-sub-score'), score=parseInt(scoreEl.value);
+            const checked=[...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb=>cb.value);
+            if (isNaN(score)||score<=0) return window.showToast("차감 점수를 입력하세요.", 'error');
+            if (checked.length===0) return window.showToast("학생을 선택하세요.", 'error');
             if (!confirm(`${checked.join(', ')}에서 ${score}P 차감할까요?`)) return;
-            get(ref(db, 'class306/mileage')).then(snap => {
-                const cur = snap.val() || {};
-                const updates = {};
-                checked.forEach(name => { updates[name] = Math.max(0, (cur[name] || 0) - score); });
-                update(ref(db, 'class306/mileage'), updates);
-                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => cb.checked = false);
-                scoreEl.value = '';
-                window.showToast(`${checked.length}명 -${score}P 차감 완료!`);
+            get(ref(db,'class306/mileage')).then(snap => {
+                const cur=snap.val()||{}, updates={};
+                checked.forEach(name => updates[name]=Math.max(0,(cur[name]||0)-score));
+                update(ref(db,'class306/mileage'),updates);
+                document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb=>cb.checked=false);
+                scoreEl.value=''; window.showToast(`${checked.length}명 -${score}P 차감 완료`);
             });
         };
 
         window.saveConfig = () => {
-            const reasons = document.getElementById('adm-reasons-input').value;
-            const personalRewards = document.getElementById('adm-personal-rewards-input').value;
-            const groupRewards = document.getElementById('adm-group-rewards-input').value;
-            const certRule = parseReasons(reasons).find(r => r.label.includes('스터디'));
-            const certMileage = certRule ? certRule.score : 3;
-            update(ref(db, 'class306/config'), { reasons, personalRewards, groupRewards, certMileage });
-            ['adm-reasons-input','adm-personal-rewards-input','adm-group-rewards-input'].forEach(id => {
-                document.getElementById(id).dataset.dirty = '';
-            });
-            updateReasonDropdowns();
-            window.showToast("설정이 저장되었습니다!");
+            const reasons=document.getElementById('adm-reasons-input').value;
+            const personalRewards=document.getElementById('adm-personal-rewards-input').value;
+            const groupRewards=document.getElementById('adm-group-rewards-input').value;
+            const certRule=parseReasons(reasons).find(r=>r.label.includes('스터디'));
+            update(ref(db,'class306/config'), {reasons,personalRewards,groupRewards,certMileage:certRule?certRule.score:3});
+            ['adm-reasons-input','adm-personal-rewards-input','adm-group-rewards-input'].forEach(id=>document.getElementById(id).dataset.dirty='');
+            updateReasonDropdowns(); window.showToast("설정이 저장되었습니다.");
         };
 
-        // ====================== 칭찬감옥 ======================
+        // ── 칭찬감옥 ──────────────────────────────────────────────
         function renderAdminPraise(praiseObj) {
-            const pendingEl = document.getElementById('adm-praise-pending');
-            const approvedEl = document.getElementById('adm-praise-approved');
+            const pendingEl=document.getElementById('adm-praise-pending');
+            const approvedEl=document.getElementById('adm-praise-approved');
+            const rejectedEl=document.getElementById('adm-praise-rejected');
             if (!pendingEl) return;
-            pendingEl.innerHTML = ''; approvedEl.innerHTML = '';
-            const pending = Object.entries(praiseObj).filter(([, p]) => !p.approved);
-            const approved = Object.entries(praiseObj).filter(([, p]) => p.approved);
+            pendingEl.innerHTML=''; approvedEl.innerHTML=''; rejectedEl.innerHTML='';
+            const pending=Object.entries(praiseObj).filter(([,p])=>!p.approved&&!p.rejected);
+            const approved=Object.entries(praiseObj).filter(([,p])=>p.approved);
+            const rejected=Object.entries(praiseObj).filter(([,p])=>p.rejected);
 
-            if (pending.length === 0) pendingEl.innerHTML = "<p class='empty-msg'>대기 중인 제보가 없어요.</p>";
-            pending.forEach(([id, p]) => {
-                pendingEl.innerHTML += `
-                    <div class="adm-praise-item">
-                        <div class="adm-praise-info">
-                            <b>${p.from} → ${p.to}</b>
-                            ${p.when ? `<p style="font-size:0.82rem;color:#64748B;">📅 ${p.when} · 📍 ${p.where||'-'}</p>` : ''}
-                            <p>${p.content}</p>
-                            <small>${p.time}</small>
+            const makePraiseCard = (id, p, mode) => `
+                <div class="row-item ${mode==='rejected'?'row-item-muted':''}">
+                    <div class="row-item-left" style="flex-direction:column;align-items:flex-start;gap:3px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <b class="row-name">${p.from}</b>
+                            <span style="color:var(--ink-mute);font-size:12px;">→</span>
+                            <b class="row-name">${p.to}</b>
+                            ${mode==='rejected'?'<span class="status-badge badge-fail">반려됨</span>':''}
                         </div>
-                        <div class="adm-praise-actions">
-                            <button class="btn-approve" onclick="window.approvePraise('${id}','${p.from}','${p.to}')">승인</button>
-                            <button class="btn-danger-sm" onclick="window.deletePraise('${id}')">거절</button>
-                        </div>
-                    </div>`;
-            });
+                        ${p.when?`<span class="row-meta">📅 ${p.when} · 📍 ${p.where||'-'}</span>`:''}
+                        <p class="row-content">${p.content}</p>
+                        <span class="row-meta">${p.time||''}</span>
+                    </div>
+                    <div class="row-item-actions">
+                        ${mode!=='approved'?`<button class="btn-sm btn-primary" onclick="window.approvePraise('${id}','${p.from}','${p.to}')">승인</button>`:''}
+                        ${mode==='pending'?`<button class="btn-sm btn-warn" onclick="window.rejectPraise('${id}')">반려</button>`:''}
+                        <button class="btn-sm btn-danger" onclick="${mode==='approved'?`window.deletePraiseWithMileage('${id}','${p.from}','${p.to}')`:`window.deletePraise('${id}')`}">삭제</button>
+                    </div>
+                </div>`;
 
-            if (approved.length === 0) approvedEl.innerHTML = "<p class='empty-msg'>승인된 칭찬이 없어요.</p>";
-            approved.forEach(([id, p]) => {
-                approvedEl.innerHTML += `
-                    <div class="adm-praise-item">
-                        <div class="adm-praise-info">
-                            <b>${p.from} → ${p.to}</b>
-                            ${p.when ? `<p style="font-size:0.82rem;color:#64748B;">📅 ${p.when} · 📍 ${p.where||'-'}</p>` : ''}
-                            <p>${p.content}</p>
-                        </div>
-                        <button class="btn-danger-sm" onclick="window.deletePraiseWithMileage('${id}','${p.from}','${p.to}')">삭제</button>
-                    </div>`;
-            });
+            if (pending.length===0) pendingEl.innerHTML="<p class='empty-msg'>대기 중인 제보가 없어요.</p>";
+            pending.forEach(([id,p]) => pendingEl.innerHTML+=makePraiseCard(id,p,'pending'));
+            if (approved.length===0) approvedEl.innerHTML="<p class='empty-msg'>승인된 칭찬이 없어요.</p>";
+            approved.forEach(([id,p]) => approvedEl.innerHTML+=makePraiseCard(id,p,'approved'));
+            if (rejected.length===0) rejectedEl.innerHTML="<p class='empty-msg'>반려된 제보가 없어요.</p>";
+            rejected.forEach(([id,p]) => rejectedEl.innerHTML+=makePraiseCard(id,p,'rejected'));
         }
 
         window.approvePraise = (id, from, to) => {
-            update(ref(db, `class306/praise/${id}`), { approved: true });
-            const praiseScore = getPraiseScore();
-            const toScore = praiseScore * 2;
-            Promise.all([get(ref(db, 'class306/mileage')), get(ref(db, 'class306/totalEarned'))]).then(([mSnap, eSnap]) => {
-                const cur = mSnap.val() || {}; const earned = eSnap.val() || {};
-                update(ref(db, 'class306/mileage'), { [from]: (cur[from]||0) + praiseScore, [to]: (cur[to]||0) + toScore });
-                update(ref(db, 'class306/totalEarned'), { [from]: (earned[from]||cur[from]||0) + praiseScore, [to]: (earned[to]||cur[to]||0) + toScore });
-                window.showToast(`승인 완료! ${from}+${praiseScore}P, ${to}+${toScore}P 적립`);
+            update(ref(db,`class306/praise/${id}`), {approved:true, rejected:false});
+            const ps=getPraiseScore(), ts=ps*2;
+            Promise.all([get(ref(db,'class306/mileage')),get(ref(db,'class306/totalEarned'))]).then(([mS,eS]) => {
+                const cur=mS.val()||{}, earned=eS.val()||{};
+                update(ref(db,'class306/mileage'),{[from]:(cur[from]||0)+ps,[to]:(cur[to]||0)+ts});
+                update(ref(db,'class306/totalEarned'),{[from]:(earned[from]||cur[from]||0)+ps,[to]:(earned[to]||cur[to]||0)+ts});
+                window.showToast(`승인 완료. ${from}+${ps}P, ${to}+${ts}P`);
             });
         };
+        window.rejectPraise = (id) => {
+            if (confirm("반려하시겠습니까? 반려 목록에서 다시 승인할 수 있어요."))
+                update(ref(db,`class306/praise/${id}`), {rejected:true}).then(() => window.showToast("반려되었습니다."));
+        };
         window.deletePraise = (id) => {
-            if (confirm("이 제보를 거절/삭제하시겠습니까?")) { remove(ref(db, `class306/praise/${id}`)); window.showToast("삭제되었습니다."); }
+            if (confirm("완전히 삭제하시겠습니까?")) { remove(ref(db,`class306/praise/${id}`)); window.showToast("삭제되었습니다."); }
         };
         window.deletePraiseWithMileage = (id, from, to) => {
-            const praiseScore = getPraiseScore();
-            const toScore = praiseScore * 2;
-            if (!confirm(`삭제 시 ${from}(-${praiseScore}P), ${to}(-${toScore}P) 차감됩니다. 삭제하시겠습니까?`)) return;
-            remove(ref(db, `class306/praise/${id}`));
-            Promise.all([get(ref(db, 'class306/mileage')), get(ref(db, 'class306/totalEarned'))]).then(([mSnap, eSnap]) => {
-                const cur = mSnap.val() || {}; const earned = eSnap.val() || {};
-                update(ref(db, 'class306/mileage'), {
-                    [from]: Math.max(0, (cur[from]||0) - praiseScore),
-                    [to]: Math.max(0, (cur[to]||0) - toScore)
-                });
-                update(ref(db, 'class306/totalEarned'), {
-                    [from]: Math.max(0, (earned[from]||cur[from]||0) - praiseScore),
-                    [to]: Math.max(0, (earned[to]||cur[to]||0) - toScore)
-                });
-                window.showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
+            const ps=getPraiseScore(), ts=ps*2;
+            if (!confirm(`삭제 시 ${from}(-${ps}P), ${to}(-${ts}P) 차감됩니다.`)) return;
+            remove(ref(db,`class306/praise/${id}`));
+            Promise.all([get(ref(db,'class306/mileage')),get(ref(db,'class306/totalEarned'))]).then(([mS,eS]) => {
+                const cur=mS.val()||{}, earned=eS.val()||{};
+                update(ref(db,'class306/mileage'),{[from]:Math.max(0,(cur[from]||0)-ps),[to]:Math.max(0,(cur[to]||0)-ts)});
+                update(ref(db,'class306/totalEarned'),{[from]:Math.max(0,(earned[from]||0)-ps),[to]:Math.max(0,(earned[to]||0)-ts)});
+                window.showToast("삭제 완료. 마일리지 자동 차감되었습니다.");
             });
         };
 
-        // ====================== 오늘하루 ======================
+        // ── 오늘하루 ──────────────────────────────────────────────
         function renderAdminToday(impObj) {
-            const listEl = document.getElementById('adm-today-approved');
+            const listEl=document.getElementById('adm-today-approved');
             if (!listEl) return;
-            listEl.innerHTML = '';
-            const all = Object.entries(impObj).sort((a, b) => new Date(b[1].time) - new Date(a[1].time));
-            if (all.length === 0) return listEl.innerHTML = "<p class='empty-msg'>기록이 없어요.</p>";
-            all.slice(0, 50).forEach(([id, i]) => {
-                listEl.innerHTML += `
-                    <div class="adm-praise-item">
-                        <div class="adm-praise-info">
-                            <b>${i.name}</b> · ${i.date}
-                            <p>${i.content}</p>
+            listEl.innerHTML='';
+            const all=Object.entries(impObj).sort((a,b) => new Date(b[1].time)-new Date(a[1].time));
+            if (all.length===0) return listEl.innerHTML="<p class='empty-msg'>기록이 없어요.</p>";
+            const grouped={};
+            all.forEach(([id,i]) => { const key=i.date||'날짜 미상'; if(!grouped[key])grouped[key]=[]; grouped[key].push({id,...i}); });
+            Object.entries(grouped).forEach(([date,items]) => {
+                listEl.innerHTML+=`<div class="date-group-header">📅 ${date} <span class="date-group-count">${items.length}명 참여</span></div>`;
+                items.forEach(i => {
+                    listEl.innerHTML+=`
+                    <div class="row-item">
+                        <div class="row-item-left" style="flex-direction:column;align-items:flex-start;gap:3px;">
+                            <b class="row-name">${i.name}</b>
+                            ${i.question?`<span class="row-question">Q. ${i.question}</span>`:''}
+                            <p class="row-content">${i.content}</p>
                         </div>
-                        <button class="btn-danger-sm" onclick="window.deleteTodayWithMileage('${id}','${i.name}')">삭제</button>
+                        <button class="btn-sm btn-danger" onclick="window.deleteTodayWithMileage('${i.id}','${i.name}')">삭제</button>
                     </div>`;
+                });
             });
-            const qInput = document.getElementById('adm-q-input');
-            if (qInput && globalData.config?.manualQuestion) qInput.value = globalData.config.manualQuestion;
+            const qInput=document.getElementById('adm-q-input');
+            if (qInput&&globalData.config?.manualQuestion) qInput.value=globalData.config.manualQuestion;
         }
 
         window.deleteTodayWithMileage = (id, name) => {
-            if (!confirm(`삭제 시 ${name}(-1P) 차감됩니다. 삭제하시겠습니까?`)) return;
-            remove(ref(db, `class306/impression/${id}`));
-            Promise.all([
-                get(ref(db, `class306/mileage/${name}`)),
-                get(ref(db, `class306/totalEarned/${name}`))
-            ]).then(([mSnap, eSnap]) => {
-                const cur = mSnap.val() || 0;
-                const earned = eSnap.val() || cur;
-                set(ref(db, `class306/mileage/${name}`), Math.max(0, cur - 1));
-                set(ref(db, `class306/totalEarned/${name}`), Math.max(0, earned - 1));
-                window.showToast(`삭제 완료! 마일리지 자동 차감되었습니다.`);
+            if (!confirm(`삭제 시 ${name}(-1P) 차감됩니다.`)) return;
+            remove(ref(db,`class306/impression/${id}`));
+            Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]).then(([mS,eS]) => {
+                const cur=mS.val()||0, earned=eS.val()||cur;
+                set(ref(db,`class306/mileage/${name}`),Math.max(0,cur-1));
+                set(ref(db,`class306/totalEarned/${name}`),Math.max(0,earned-1));
+                window.showToast("삭제 완료. 마일리지 자동 차감되었습니다.");
             });
         };
 
         window.updateManualQ = () => {
-            const q = document.getElementById('adm-q-input').value.trim();
+            const q=document.getElementById('adm-q-input').value.trim();
             if (!q) return window.showToast("질문을 입력하세요.", 'error');
-            const dateStr = new Date().toISOString().slice(0, 10);
-            update(ref(db, 'class306/config'), { manualQuestion: q, manualQuestionDate: dateStr });
-            window.showToast("오늘의 질문이 변경되었습니다!");
+            update(ref(db,'class306/config'), {manualQuestion:q, manualQuestionDate:new Date().toISOString().slice(0,10)});
+            window.showToast("오늘의 질문이 변경되었습니다.");
+        };
+
+        window.exportTodayToExcel = () => {
+            const impObj=globalData.impression||{};
+            const all=Object.values(impObj).sort((a,b) => new Date(b.time)-new Date(a.time));
+            if (all.length===0) return window.showToast("내보낼 데이터가 없어요.", 'error');
+            const bom='\uFEFF';
+            const header=['날짜','이름','질문','답변','시간'].join(',');
+            const rows=all.map(i=>[`"${i.date||''}"`,,`"${i.name||''}"`,`"${(i.question||'').replace(/"/g,'""')}"`,`"${(i.content||'').replace(/"/g,'""')}"`,`"${i.time||''}"`].join(','));
+            const csv=bom+header+'\n'+rows.join('\n');
+            const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement('a'); a.href=url; a.download=`306_오늘하루_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+            URL.revokeObjectURL(url);
+            window.showToast("CSV 파일로 내보냈어요.");
         };
     </script>
 
     <style>
+        /* ── Stripe Design System ─────────────────────────────── */
         :root {
-            --primary: #2DD4BF; --secondary: #38BDF8; --accent: #F472B6;
-            --mint-light: #F0FDFA; --study: #6366F1;
-            --bg: #F0F9FF; --card: rgba(255,255,255,0.85); --text: #0F172A; --text-sub: #64748B;
-            --border: rgba(226,232,240,0.8); --grad: linear-gradient(135deg,#2DD4BF 0%,#38BDF8 100%);
-            --shadow: 0 10px 25px -5px rgba(45,212,191,0.1),0 8px 10px -6px rgba(45,212,191,0.1);
-            --radius: 24px; --max-w: 680px;
+            /* Brand */
+            --primary: #533afd;
+            --primary-deep: #4434d4;
+            --primary-press: #2e2b8c;
+            --primary-soft: #665efd;
+            --primary-subdued: #eeedff;
+            --brand-dark: #1c1e54;
+            --ink: #0d253d;
+            --ink-secondary: #273951;
+            --ink-mute: #64748d;
+            --on-primary: #ffffff;
+            /* Surface */
+            --canvas: #ffffff;
+            --canvas-soft: #f6f9fc;
+            --canvas-cream: #f5e9d4;
+            --hairline: #e3e8ee;
+            --hairline-input: #a8c3de;
+            /* Semantic */
+            --green: #1a7f5a;
+            --green-bg: #e6f6f0;
+            --red: #c0392b;
+            --red-bg: #fdf0ef;
+            --warn: #d97706;
+            --warn-bg: #fef3c7;
+            /* Shadow */
+            --shadow-1: rgba(0,55,112,0.08) 0 1px 3px;
+            --shadow-2: rgba(0,55,112,0.08) 0 8px 24px, rgba(0,55,112,0.04) 0 2px 6px;
+            /* Layout */
+            --max-w: 1100px;
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-pill: 9999px;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Pretendard',sans-serif; background: var(--bg); color: var(--text); padding-top: 40px; padding-bottom: 60px; letter-spacing: -0.02em; line-height: 1.6; min-height: 100vh; }
 
-        /* 전체 콘텐츠를 가운데 정렬하는 래퍼 */
-        .page-wrap { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: calc(var(--max-w) + 32px); margin: 0 auto; padding: 0 16px; }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .back-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: white; border: 1px solid var(--border); border-radius: 20px; font-size: 0.88rem; font-weight: 800; color: var(--text-sub); cursor: pointer; font-family: inherit; margin-bottom: 20px; text-decoration: none; align-self: center; }
-        .back-btn:hover { background: var(--text); color: white; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 15px;
+            font-weight: 300;
+            line-height: 1.6;
+            color: var(--ink);
+            background: var(--canvas-soft);
+            font-feature-settings: "ss01";
+            letter-spacing: 0;
+            min-height: 100vh;
+        }
 
-        .glass-card { background: white; border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 16px; width: 100%; }
-        .glass-card h2 { font-size: 1.3rem; margin-bottom: 16px; letter-spacing: -0.03em; color: var(--text); }
+        /* ── Gradient Mesh Hero ───────────────────────────────── */
+        .mesh-hero {
+            background: linear-gradient(135deg,
+                #fef3e2 0%, #fde8c8 8%,
+                #f0e6ff 22%, #d4d0ff 38%,
+                #c7d2ff 52%, #a5b4fc 62%,
+                #fbc8d4 78%, #fda4af 90%, #fecdd3 100%);
+            padding: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .mesh-hero::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(83,58,253,0.12) 0%, transparent 70%),
+                        radial-gradient(ellipse 50% 70% at 80% 30%, rgba(234,34,97,0.10) 0%, transparent 70%),
+                        radial-gradient(ellipse 40% 60% at 55% 80%, rgba(249,107,238,0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
 
-        .adm-tab-nav { display: flex; background: white; border-radius: 18px; padding: 8px; gap: 6px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); flex-wrap: wrap; border: 1px solid var(--border); width: 100%; }
-        .adm-tab-btn { flex: 1; padding: 12px 6px; border: none; border-radius: 14px; background: transparent; font-weight: 800; color: var(--text-sub); cursor: pointer; font-family: inherit; font-size: 0.85rem; transition: all 0.2s; min-width: 56px; }
-        .adm-tab-btn.active { background: var(--text); color: white; }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 20px 32px;
+            position: relative;
+            z-index: 1;
+        }
 
-        .adm-tab-content { display: none; width: 100%; }
+        .top-bar-left { display: flex; align-items: center; gap: 16px; }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--ink-mute);
+            text-decoration: none;
+            padding: 7px 14px;
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-pill);
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(8px);
+            transition: all 0.15s;
+        }
+        .back-link:hover { background: white; color: var(--ink); }
+
+        .wordmark {
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--ink);
+            letter-spacing: -0.3px;
+        }
+        .wordmark span { color: var(--primary); }
+
+        .role-badge {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--primary-deep);
+            background: var(--primary-subdued);
+            padding: 3px 10px;
+            border-radius: var(--radius-pill);
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+
+        /* ── Tab Navigation ───────────────────────────────────── */
+        .tab-nav-wrap {
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 0 32px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .adm-tab-nav {
+            display: flex;
+            gap: 2px;
+            background: rgba(255,255,255,0.55);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.6);
+            border-radius: var(--radius-lg);
+            padding: 6px;
+            width: fit-content;
+            margin-bottom: 0;
+            box-shadow: var(--shadow-1);
+        }
+
+        .adm-tab-btn {
+            padding: 9px 20px;
+            border: none;
+            border-radius: var(--radius-md);
+            background: transparent;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            letter-spacing: -0.1px;
+        }
+        .adm-tab-btn:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
+        .adm-tab-btn.active {
+            background: white;
+            color: var(--ink);
+            font-weight: 500;
+            box-shadow: var(--shadow-1);
+        }
+
+        .hero-pad { padding-bottom: 32px; }
+
+        /* ── Page Body ────────────────────────────────────────── */
+        .page-body {
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 32px 32px 64px;
+        }
+
+        /* ── Tab Content ──────────────────────────────────────── */
+        .adm-tab-content { display: none; }
         .adm-tab-content.active { display: block; }
 
-        .adm-section { background: white; border-radius: 18px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); width: 100%; }
-        .adm-section h4 { font-size: 1rem; font-weight: 800; color: var(--text); margin-bottom: 14px; }
+        /* ── Card ─────────────────────────────────────────────── */
+        .card {
+            background: var(--canvas);
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 20px 28px;
+            border-bottom: 1px solid var(--hairline);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--ink);
+            letter-spacing: -0.2px;
+        }
+        .card-body { padding: 24px 28px; }
+        .card-body + .card-body { border-top: 1px solid var(--hairline); }
 
-        .adm-cal-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
-        .adm-cal-item:last-child { border-bottom: none; }
-        .adm-cal-info { display: flex; gap: 14px; align-items: center; }
-        .adm-cal-date { color: var(--primary); font-weight: 800; font-size: 0.9rem; min-width: 48px; }
-        .adm-cal-title { font-weight: 700; }
+        /* ── Section Label (내부 구분) ────────────────────────── */
+        .section-label {
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--ink-mute);
+            margin-bottom: 14px;
+        }
 
-        .student-check-list { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; max-height: 240px; overflow-y: auto; padding: 6px 0; }
-        .adm-mileage-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #F8FAFC; border-radius: 12px; border: 1.5px solid transparent; cursor: pointer; transition: all 0.2s; }
-        .adm-mileage-item:has(.student-check:checked) { border-color: var(--primary); background: var(--mint-light); }
-        .adm-mileage-item input[type="checkbox"] { accent-color: var(--primary); cursor: pointer; width: 16px; height: 16px; }
-        .adm-m-name { flex: 1; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
-        .adm-m-score { font-weight: 900; color: var(--primary); font-size: 0.85rem; }
+        /* ── Row Item ─────────────────────────────────────────── */
+        .row-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--hairline);
+        }
+        .row-item:last-child { border-bottom: none; }
+        .row-item-muted { opacity: 0.6; }
+        .row-item-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+        .row-item-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .row-name { font-size: 14px; font-weight: 500; color: var(--ink); }
+        .row-meta { font-size: 13px; color: var(--ink-mute); }
+        .row-content { font-size: 14px; color: var(--ink-secondary); margin-top: 2px; line-height: 1.5; }
+        .row-subject { font-size: 13px; color: var(--primary); font-weight: 500; }
+        .row-question { font-size: 12px; color: var(--ink-mute); font-style: italic; }
 
-        .btn-sel-all { padding: 8px 16px; border-radius: 16px; border: 1px solid var(--border); background: #F8FAFC; font-size: 0.85rem; font-weight: 800; cursor: pointer; font-family: inherit; color: var(--text-sub); }
-        .btn-danger-sm { padding: 8px 12px; border: none; border-radius: 10px; background: #EF4444; color: white; font-weight: 800; cursor: pointer; font-size: 0.85rem; }
-        .btn-approve { padding: 8px 14px; border: none; border-radius: 10px; background: var(--primary); color: white; font-weight: 800; cursor: pointer; font-size: 0.85rem; }
+        /* ── Badges ───────────────────────────────────────────── */
+        .num-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 32px; height: 32px;
+            font-size: 13px; font-weight: 600;
+            color: var(--ink-secondary);
+            background: var(--canvas-soft);
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-md);
+            flex-shrink: 0;
+            font-feature-settings: 'tnum';
+        }
+        .cal-date-tag {
+            font-size: 13px; font-weight: 600;
+            color: var(--primary);
+            background: var(--primary-subdued);
+            padding: 3px 10px;
+            border-radius: var(--radius-pill);
+            white-space: nowrap;
+            font-feature-settings: 'tnum';
+        }
+        .status-badge {
+            font-size: 11px; font-weight: 500;
+            padding: 2px 8px;
+            border-radius: var(--radius-pill);
+        }
+        .badge-pass { background: var(--green-bg); color: var(--green); }
+        .badge-fail { background: var(--red-bg); color: var(--red); }
+        .badge-warn { background: var(--warn-bg); color: var(--warn); }
 
-        .adm-praise-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); gap: 12px; }
-        .adm-praise-item:last-child { border-bottom: none; }
-        .adm-praise-info { flex: 1; }
-        .adm-praise-info b { font-size: 0.95rem; }
-        .adm-praise-info p { font-size: 0.9rem; color: var(--text); margin: 6px 0; }
-        .adm-praise-info small { font-size: 0.8rem; color: var(--text-sub); }
-        .adm-praise-actions { display: flex; gap: 8px; flex-shrink: 0; }
+        .score-pill {
+            font-size: 13px; font-weight: 600;
+            padding: 2px 10px;
+            border-radius: var(--radius-pill);
+            font-feature-settings: 'tnum';
+        }
+        .score-pos { background: var(--green-bg); color: var(--green); }
+        .score-neg { background: var(--canvas-soft); color: var(--ink-mute); }
 
-        .adm-cert-item { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); gap: 12px; }
-        .adm-cert-info p { font-size: 0.9rem; margin: 4px 0; }
-        .cert-badge { display: inline-block; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 20px; margin-right: 8px; }
-        .cert-badge.pass { background: var(--mint-light); color: #0F766E; }
-        .cert-badge.fail { background: #FEF2F2; color: #EF4444; }
+        /* ── Stats Row ────────────────────────────────────────── */
+        .stats-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .stat-item { font-size: 14px; color: var(--ink-mute); }
+        .stat-sep { color: var(--hairline); font-size: 14px; }
+        .c-green { color: var(--green); }
+        .c-red { color: var(--red); }
+        .c-indigo { color: var(--primary); }
 
-        .auto-note { display: inline-block; background: #DCFCE7; color: #15803D; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px; }
+        /* ── Date Group ───────────────────────────────────────── */
+        .date-group-header {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ink-mute);
+            padding: 16px 0 8px;
+            border-bottom: 1px solid var(--hairline);
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            letter-spacing: 0.2px;
+        }
+        .date-group-count {
+            font-weight: 400;
+            color: var(--ink-mute);
+            font-size: 12px;
+        }
 
-        /* [수정7] API 키 안내 박스 */
-        .api-key-guide { background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 14px; padding: 14px 16px; font-size: 0.85rem; color: #4338CA; font-weight: 600; margin-bottom: 14px; line-height: 1.7; }
-        .api-key-guide b { color: #3730A3; }
+        /* ── Buttons ──────────────────────────────────────────── */
+        .btn-primary {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 8px 16px;
+            background: var(--primary);
+            color: var(--on-primary);
+            border: none;
+            border-radius: var(--radius-pill);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 400;
+            cursor: pointer;
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+        .btn-primary:hover { background: var(--primary-deep); }
+        .btn-primary:active { background: var(--primary-press); }
 
-        .empty-msg { text-align: center; color: var(--text-sub); padding: 24px 0; font-size: 0.95rem; font-weight: 500; }
-        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--text); color: white; padding: 14px 28px; border-radius: 30px; font-weight: 800; font-size: 0.95rem; z-index: 9999; transition: transform 0.3s ease; white-space: nowrap; }
-        .toast.show { transform: translateX(-50%) translateY(0); }
-        .toast.error { background: #EF4444; }
-        .toast.levelup { background: linear-gradient(135deg,var(--study),var(--primary)); }
+        .btn-secondary {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 8px 16px;
+            background: var(--canvas);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            border-radius: var(--radius-pill);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 400;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-secondary:hover { background: var(--primary-subdued); }
 
-        input[type="text"],input[type="number"],input[type="date"],input[type="password"],textarea,select { width: 100%; padding: 14px 18px; margin-bottom: 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,0.1); font-family: inherit; font-size: 0.95rem; color: var(--text); background: #F8FAFC; outline: none; transition: all 0.2s; }
+        .btn-sm {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 6px 12px;
+            border-radius: var(--radius-pill);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 400;
+            cursor: pointer;
+            border: none;
+            white-space: nowrap;
+            transition: all 0.15s;
+            text-decoration: none;
+        }
+        .btn-sm.btn-primary { background: var(--primary); color: white; }
+        .btn-sm.btn-primary:hover { background: var(--primary-deep); }
+        .btn-sm.btn-ghost {
+            background: var(--canvas-soft);
+            color: var(--ink-secondary);
+            border: 1px solid var(--hairline);
+        }
+        .btn-sm.btn-ghost:hover { background: var(--hairline); }
+        .btn-sm.btn-danger { background: var(--red-bg); color: var(--red); }
+        .btn-sm.btn-danger:hover { background: #fbd5d1; }
+        .btn-sm.btn-warn { background: var(--warn-bg); color: var(--warn); }
+        .btn-sm.btn-warn:hover { background: #fde68a; }
+
+        .btn-full {
+            width: 100%;
+            padding: 11px 20px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--radius-pill);
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 400;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-full:hover { background: var(--primary-deep); }
+        .btn-full.btn-full-ghost {
+            background: var(--canvas);
+            color: var(--ink-secondary);
+            border: 1px solid var(--hairline);
+        }
+        .btn-full.btn-full-ghost:hover { background: var(--canvas-soft); }
+        .btn-full.btn-danger-full { background: var(--red-bg); color: var(--red); border: 1px solid #fbd5d1; }
+
+        /* ── Forms ────────────────────────────────────────────── */
+        .form-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 12px; font-weight: 500; color: var(--ink-mute); }
+
+        input[type="text"], input[type="number"], input[type="date"],
+        input[type="password"], textarea, select {
+            width: 100%;
+            padding: 10px 14px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--ink);
+            background: var(--canvas);
+            border: 1px solid var(--hairline-input);
+            border-radius: var(--radius-sm);
+            outline: none;
+            transition: border-color 0.15s;
+            margin-bottom: 10px;
+        }
+        input:focus, textarea:focus, select:focus { border-color: var(--primary); }
         input[type="number"] { -moz-appearance: textfield; }
         input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        input:focus,textarea:focus,select:focus { border-color: var(--primary); background: white; }
-        .btn-main { width: 100%; padding: 16px; border: none; border-radius: 16px; background: var(--text); color: white; font-weight: 800; cursor: pointer; font-family: inherit; font-size: 1.05rem; }
+        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
 
-        /* 모달 */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+        /* ── Mileage Grid ─────────────────────────────────────── */
+        .student-check-list {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            max-height: 280px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+            padding: 2px;
+        }
+        .adm-mileage-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 12px;
+            background: var(--canvas-soft);
+            border: 1px solid transparent;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.12s;
+        }
+        .adm-mileage-item:has(.student-check:checked) {
+            border-color: var(--primary);
+            background: var(--primary-subdued);
+        }
+        .adm-mileage-item input[type="checkbox"] { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; }
+        .adm-m-name { flex: 1; font-size: 13px; font-weight: 400; color: var(--ink); cursor: pointer; }
+        .adm-m-score { font-size: 12px; font-weight: 500; color: var(--ink-mute); font-feature-settings: 'tnum'; }
+
+        .select-all-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .btn-sel { padding: 6px 14px; border-radius: var(--radius-pill); border: 1px solid var(--hairline); background: var(--canvas); font-size: 13px; font-weight: 400; cursor: pointer; color: var(--ink-mute); font-family: inherit; }
+        .btn-sel:hover { background: var(--canvas-soft); color: var(--ink); }
+
+        /* ── Action Bar ───────────────────────────────────────── */
+        .action-bar {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+            margin-top: 16px;
+        }
+        .action-bar .btn-full { flex: 2; }
+        .deduct-group { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+        .deduct-group input { margin-bottom: 0; }
+
+        /* ── Info Box ─────────────────────────────────────────── */
+        .info-box {
+            background: var(--primary-subdued);
+            border: 1px solid #d4d0ff;
+            border-radius: var(--radius-md);
+            padding: 14px 18px;
+            font-size: 14px;
+            color: var(--primary-deep);
+            line-height: 1.7;
+            margin-bottom: 16px;
+        }
+        .info-box b { color: var(--brand-dark); }
+        .info-box a { color: var(--primary); font-weight: 500; }
+        .info-box code { background: #d4d0ff; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+        .auto-tag {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 12px; font-weight: 500;
+            color: var(--green);
+            background: var(--green-bg);
+            padding: 3px 10px;
+            border-radius: var(--radius-pill);
+        }
+
+        /* ── Toast ────────────────────────────────────────────── */
+        .toast {
+            position: fixed; bottom: 28px; left: 50%;
+            transform: translateX(-50%) translateY(120px);
+            background: var(--ink);
+            color: white;
+            padding: 12px 24px;
+            border-radius: var(--radius-pill);
+            font-size: 14px; font-weight: 400;
+            z-index: 9999;
+            transition: transform 0.25s cubic-bezier(.22,.68,0,1.2);
+            white-space: nowrap;
+            box-shadow: var(--shadow-2);
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.error { background: #c0392b; }
+        .toast.levelup { background: var(--primary); }
+
+        /* ── Modal ────────────────────────────────────────────── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(13,37,61,0.5);
+            z-index: 1000;
+            align-items: center; justify-content: center;
+            backdrop-filter: blur(6px);
+        }
         .modal-overlay.open { display: flex; }
-        .modal-box { background: white; border-radius: 28px; padding: 40px 36px; max-width: 400px; width: 90%; box-shadow: 0 30px 60px rgba(0,0,0,0.2); text-align: center; }
-        .modal-box h2 { font-size: 1.5rem; font-weight: 900; margin-bottom: 8px; }
-        .modal-box p { color: var(--text-sub); font-size: 0.95rem; margin-bottom: 24px; }
-        .modal-lock { font-size: 3.5rem; margin-bottom: 16px; }
-        .modal-input-wrap input { width: 100%; padding: 16px 20px; border-radius: 16px; border: 2px solid var(--border); font-size: 1.2rem; text-align: center; letter-spacing: 4px; margin-bottom: 16px; background: white; }
-        #admin-pw-error { color: #EF4444; font-size: 0.9rem; margin-bottom: 16px; display: none; font-weight: 600; }
-        .btn-confirm { width: 100%; padding: 14px; border: none; border-radius: 14px; background: var(--grad); color: white; font-weight: 800; cursor: pointer; font-family: inherit; font-size: 1.05rem; }
+        .modal-box {
+            background: white;
+            border-radius: 16px;
+            padding: 48px 40px;
+            max-width: 400px; width: 90%;
+            box-shadow: var(--shadow-2);
+            text-align: center;
+        }
+        .modal-icon { font-size: 2.5rem; margin-bottom: 16px; }
+        .modal-title { font-size: 22px; font-weight: 300; letter-spacing: -0.5px; color: var(--ink); margin-bottom: 6px; }
+        .modal-sub { font-size: 14px; color: var(--ink-mute); margin-bottom: 28px; line-height: 1.6; }
+        .modal-pw-input {
+            width: 100%; padding: 14px 18px;
+            font-size: 20px; text-align: center; letter-spacing: 6px;
+            border: 1px solid var(--hairline-input); border-radius: var(--radius-sm);
+            background: white; outline: none; margin-bottom: 14px;
+            font-family: inherit;
+        }
+        .modal-pw-input:focus { border-color: var(--primary); }
+        .modal-error {
+            color: var(--red); font-size: 13px;
+            margin-bottom: 14px; display: none;
+            background: var(--red-bg); padding: 8px 14px;
+            border-radius: var(--radius-md);
+        }
 
-        @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
-        .shake { animation: shake 0.4s ease; }
-        @media (max-width:480px) { .student-check-list { grid-template-columns: repeat(2,1fr); } }
+        /* ── Misc ─────────────────────────────────────────────── */
+        .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; }
+        .note-text { text-align: center; font-size: 12px; color: var(--ink-mute); padding: 8px 0; }
+        .divider { height: 1px; background: var(--hairline); margin: 20px 0; }
+
+        @keyframes shake { 0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)} }
+        .shake { animation: shake 0.35s ease; }
+
+        /* ── Responsive ───────────────────────────────────────── */
+        @media (max-width: 768px) {
+            .top-bar { padding: 16px 20px; }
+            .tab-nav-wrap { padding: 0 16px; }
+            .adm-tab-nav { width: 100%; overflow-x: auto; }
+            .adm-tab-btn { padding: 8px 14px; font-size: 13px; }
+            .page-body { padding: 20px 16px 48px; }
+            .card-body { padding: 18px 20px; }
+            .card-header { padding: 16px 20px; }
+            .student-check-list { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body>
 
-<!-- 비밀번호 모달 -->
+<!-- Modal -->
 <div id="admin-modal" class="modal-overlay open">
     <div class="modal-box">
-        <div class="modal-lock">🔐</div>
-        <h2>관리자 전용</h2>
-        <p>선생님 또는 회장단만 접근할 수 있어요</p>
-        <div class="modal-input-wrap">
-            <input type="password" id="admin-pw-input" placeholder="비밀번호 입력">
-        </div>
-        <div id="admin-pw-error">비밀번호가 틀렸습니다 😢</div>
-        <button class="btn-confirm" onclick="window.tryAdminLogin()">접속하기</button>
+        <div class="modal-icon">🔐</div>
+        <div class="modal-title">관리자 전용</div>
+        <p class="modal-sub">선생님 또는 회장단만 접근할 수 있어요</p>
+        <input type="password" id="admin-pw-input" class="modal-pw-input" placeholder="••••••">
+        <div id="admin-pw-error" class="modal-error">비밀번호가 틀렸습니다.</div>
+        <button class="btn-full" onclick="window.tryAdminLogin()">접속</button>
     </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<div class="page-wrap">
-
-<!-- 대시보드로 돌아가기 -->
-<a href="dashboard.html" class="back-btn">← 학급 대시보드로</a>
-
-<!-- 탭 네비게이션 -->
-<div class="adm-tab-nav">
-    <button class="adm-tab-btn active" onclick="window.showAdminTab(this,'adm-home')">📅 홈</button>
-    <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-students')">👥 명단</button>
-    <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-mileage')">💰 마일리지</button>
-    <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-praise')">🌟 칭찬</button>
-    <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-today')">✏️ 오늘하루</button>
-    <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-cert')">📚 스터디</button>
-</div>
-
-<!-- 1. 홈/일정 -->
-<div id="adm-home" class="adm-tab-content active">
-    <div class="glass-card">
-        <h2>📅 일정 관리</h2>
-        <div class="adm-section">
-            <h4>새 일정 추가</h4>
-            <div style="display:flex;gap:10px;align-items:flex-end;">
-                <input type="date" id="adm-cal-date" style="flex:1;margin-bottom:0;">
-                <input type="text" id="adm-cal-title" placeholder="일정 제목" style="flex:2;margin-bottom:0;">
-                <button class="btn-approve" onclick="window.addCal()" style="white-space:nowrap;padding:14px 18px;">추가</button>
-            </div>
+<!-- Hero + Nav -->
+<div class="mesh-hero">
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <a href="dashboard.html" class="back-link">← 대시보드</a>
+            <div class="wordmark">306 <span>WORLD</span> <span style="color:var(--ink-mute);font-weight:300;">관리자</span></div>
         </div>
-        <div class="adm-section"><h4>등록된 일정</h4><div id="adm-cal-list"></div></div>
+        <span class="role-badge" id="role-badge" style="display:none;">선생님</span>
+    </div>
+
+    <div class="tab-nav-wrap hero-pad">
+        <div class="adm-tab-nav">
+            <button class="adm-tab-btn active" onclick="window.showAdminTab(this,'adm-home')">🏠 홈</button>
+            <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-mileage')">⭐ 마일리지</button>
+            <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-cert')">📚 스터디 체크</button>
+            <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-praise')">🌟 칭찬감옥</button>
+            <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-today')">✏️ 오늘하루</button>
+            <button class="adm-tab-btn" data-role="teacher" onclick="window.showAdminTab(this,'adm-students')">👥 학생명단</button>
+        </div>
     </div>
 </div>
 
-<!-- 2. 학생 명단 관리 -->
-<div id="adm-students" class="adm-tab-content">
-    <div class="glass-card">
-        <h2>👥 학생 명단 관리</h2>
-        <div class="adm-section">
-            <h4>명단 추가/수정</h4>
-            <div style="display:flex;gap:10px;align-items:flex-start;">
-                <input type="number" id="adm-std-num" placeholder="번호" style="width:90px;margin-bottom:0;" min="1" max="99">
-                <input type="text" id="adm-std-name" placeholder="이름 입력" style="flex:1;margin-bottom:0;">
-                <button class="btn-main" id="adm-std-btn" onclick="window.saveStudent()" style="width:auto;padding:14px 20px;">저장</button>
-            </div>
-        </div>
-        <div class="adm-section"><h4>등록된 학급 명단</h4><div id="adm-std-list"></div></div>
-    </div>
-</div>
+<!-- Page Body -->
+<div class="page-body">
 
-<!-- 3. 마일리지 -->
-<div id="adm-mileage" class="adm-tab-content">
-    <div class="glass-card">
-        <h2>💰 마일리지 관리</h2>
-        <div class="adm-section">
-            <h4>적립 방법 설정</h4>
-            <p style="font-size:0.85rem;color:var(--text-sub);margin-bottom:10px;">한 줄에 하나씩 <b>사유: +점수P</b> 형식으로 입력</p>
-            <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;스터디 체크: +3P"></textarea>
-            <h4 style="margin-top:8px;">개인 보상 설정</h4>
-            <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
-            <h4 style="margin-top:8px;">단체 보상 설정</h4>
-            <textarea id="adm-group-rewards-input" rows="2" placeholder="3,000P: 학급 파티"></textarea>
-            <button class="btn-main" onclick="window.saveConfig()">설정 저장</button>
+    <!-- 1. 홈/일정 -->
+    <div id="adm-home" class="adm-tab-content active">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📅 일정 등록</span>
+            </div>
+            <div class="card-body">
+                <div class="form-row">
+                    <input type="date" id="adm-cal-date" style="margin-bottom:0;flex:1;">
+                    <input type="text" id="adm-cal-title" placeholder="일정 제목" style="margin-bottom:0;flex:2;">
+                    <button class="btn-primary" onclick="window.addCal()" style="flex-shrink:0;">추가</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="section-label">등록된 일정</p>
+                <div id="adm-cal-list"></div>
+            </div>
         </div>
-        <div class="adm-section">
-            <h4>마일리지 적립</h4>
-            <select id="adm-reason-select" onchange="window.onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')"><option value="">적립 사유 선택</option></select>
-            <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
-            <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;">
-                <input type="number" id="adm-add-score" placeholder="점수" style="flex:1;margin-bottom:0;min-width:0;">
-                <span style="font-size:0.9rem;font-weight:700;color:var(--text-sub);white-space:nowrap;">P 적립</span>
+    </div>
+
+    <!-- 2. 마일리지 -->
+    <div id="adm-mileage" class="adm-tab-content">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+            <div>
+                <div class="card">
+                    <div class="card-header"><span class="card-title">⚙️ 적립 설정</span></div>
+                    <div class="card-body">
+                        <p class="section-label">적립 방법 <span style="font-weight:300;text-transform:none;">(사유: +점수P 형식)</span></p>
+                        <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;스터디 체크: +3P"></textarea>
+                        <p class="section-label">개인 보상</p>
+                        <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
+                        <p class="section-label">단체 보상</p>
+                        <textarea id="adm-group-rewards-input" rows="2" placeholder="3,000P: 학급 파티"></textarea>
+                        <button class="btn-full" onclick="window.saveConfig()">설정 저장</button>
+                    </div>
+                </div>
             </div>
-            <div style="display:flex;gap:10px;margin-bottom:10px;">
-                <button class="btn-sel-all" onclick="window.toggleAllStudents('all')">전체 선택</button>
-                <button class="btn-sel-all" onclick="window.toggleAllStudents('none')">전체 해제</button>
-            </div>
-            <div id="adm-mileage-list" class="student-check-list"></div>
-            <div style="display:flex;gap:10px;margin-top:16px;">
-                <button class="btn-main" onclick="window.doMileageAdd()" style="flex:2;">✅ 적립하기</button>
-                <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
-                    <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0;font-size:0.85rem;padding:10px;">
-                    <button class="btn-danger-sm" style="width:100%;padding:10px;" onclick="window.doMileageSub()">차감하기</button>
+            <div>
+                <div class="card">
+                    <div class="card-header"><span class="card-title">💰 마일리지 적립 / 차감</span></div>
+                    <div class="card-body">
+                        <select id="adm-reason-select" onchange="window.onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')">
+                            <option value="">적립 사유 선택</option>
+                        </select>
+                        <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
+                        <input type="number" id="adm-add-score" placeholder="점수 (P)">
+                        <div class="select-all-row">
+                            <button class="btn-sel" onclick="window.toggleAllStudents('all')">전체 선택</button>
+                            <button class="btn-sel" onclick="window.toggleAllStudents('none')">전체 해제</button>
+                        </div>
+                        <div id="adm-mileage-list" class="student-check-list"></div>
+                        <div class="action-bar">
+                            <button class="btn-full" onclick="window.doMileageAdd()">적립</button>
+                            <div class="deduct-group">
+                                <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0;">
+                                <button class="btn-full btn-danger-full" onclick="window.doMileageSub()">차감</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- 4. 칭찬감옥 -->
-<div id="adm-praise" class="adm-tab-content">
-    <div class="glass-card">
-        <h2>🌟 칭찬감옥 관리</h2>
-        <div class="adm-section"><h4>⏳ 승인 대기</h4><div id="adm-praise-pending"></div></div>
-        <div class="adm-section"><h4>✅ 승인된 칭찬</h4><div id="adm-praise-approved"></div></div>
-    </div>
-</div>
-
-<!-- 5. 오늘하루 -->
-<div id="adm-today" class="adm-tab-content">
-    <div class="glass-card">
-        <h2>✏️ 오늘하루 관리</h2>
-        <div class="adm-section">
-            <span class="auto-note">⚡ 학생 제출 시 자동 승인 · +1P 자동 적립</span>
-            <h4>오늘의 질문 수동 변경</h4>
-            <input type="text" id="adm-q-input" placeholder="질문 직접 입력 (비워두면 자동 생성)">
-            <button class="btn-main" onclick="window.updateManualQ()">오늘 질문 변경</button>
-        </div>
-        <div class="adm-section"><h4>📋 전체 기록</h4><div id="adm-today-approved"></div></div>
-    </div>
-</div>
-
-<!-- 6. 스터디 체크 -->
-<div id="adm-cert" class="adm-tab-content">
-    <div class="glass-card">
-        <h2>📚 스터디 체크 관리</h2>
-        <div class="adm-section">
-            <span class="auto-note">⚡ Claude AI 자동 판정 · 통과 시 포인트 자동 적립</span>
-
-            <!-- [수정7] Claude API 키 설명 강화 -->
-            <h4 style="margin-top:12px;">🔑 Claude API 키 설정</h4>
-            <div class="api-key-guide">
-                <b>스터디 체크는 Claude API 키가 있어야 작동해요!</b><br>
-                API 키 없이는 학생이 사진을 올려도 AI 판정이 되지 않아요.<br><br>
-                <b>발급 방법:</b><br>
-                1. <a href="https://console.anthropic.com" target="_blank" style="color:var(--study);font-weight:800;">console.anthropic.com</a> 접속<br>
-                2. 회원가입 후 API Keys 메뉴에서 키 생성<br>
-                3. <code style="background:#C7D2FE;padding:2px 6px;border-radius:4px;">sk-ant-...</code> 형식의 키를 아래에 붙여넣기
+    <!-- 3. 스터디 체크 -->
+    <div id="adm-cert" class="adm-tab-content">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📚 스터디 체크 관리</span>
+                <span class="auto-tag">⚡ AI 자동 판정</span>
             </div>
-            <input type="password" id="adm-api-key-input" placeholder="sk-ant-...">
-            <button class="btn-main" style="background:var(--study);" onclick="window.saveApiKey()">API 키 저장</button>
-        </div>
-        <div class="adm-section">
-            <h4>📊 체크 통계</h4>
-            <div id="adm-cert-stats" style="font-size:0.95rem;font-weight:500;color:var(--text-sub);padding:6px 0;"></div>
-        </div>
-        <div class="adm-section">
-            <h4>📋 전체 체크 내역</h4>
-            <div id="adm-cert-list"></div>
+            <div class="card-body">
+                <p class="section-label">Claude API 키 설정</p>
+                <div class="info-box">
+                    <b>스터디 체크는 Claude API 키가 있어야 작동해요.</b><br>
+                    <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>에서 발급 후 <code>sk-ant-...</code> 형식의 키를 입력하세요.
+                </div>
+                <input type="password" id="adm-api-key-input" placeholder="sk-ant-...">
+                <button class="btn-primary" onclick="window.saveApiKey()">API 키 저장</button>
+            </div>
+            <div class="card-body">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                    <p class="section-label" style="margin-bottom:0;">체크 내역</p>
+                    <div class="stats-row" id="adm-cert-stats"></div>
+                </div>
+                <div id="adm-cert-list"></div>
+            </div>
         </div>
     </div>
-</div>
 
-</div><!-- /.page-wrap -->
+    <!-- 4. 칭찬감옥 -->
+    <div id="adm-praise" class="adm-tab-content">
+        <div class="card">
+            <div class="card-header"><span class="card-title">🌟 칭찬감옥 관리</span></div>
+            <div class="card-body">
+                <p class="section-label">⏳ 승인 대기</p>
+                <div id="adm-praise-pending"></div>
+            </div>
+            <div class="card-body">
+                <p class="section-label">✅ 승인된 칭찬</p>
+                <div id="adm-praise-approved"></div>
+            </div>
+            <div class="card-body">
+                <p class="section-label">🔄 반려된 제보 <span style="font-weight:300;text-transform:none;font-size:11px;color:var(--ink-mute);">재승인 가능</span></p>
+                <div id="adm-praise-rejected"></div>
+            </div>
+        </div>
+    </div>
 
+    <!-- 5. 오늘하루 -->
+    <div id="adm-today" class="adm-tab-content">
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <span class="card-title">✏️ 오늘하루 관리</span>
+                    <span class="auto-tag" style="margin-left:10px;">⚡ 자동 승인 · +1P</span>
+                </div>
+                <button class="btn-secondary" onclick="window.exportTodayToExcel()">📥 CSV 내보내기</button>
+            </div>
+            <div class="card-body">
+                <p class="section-label">오늘의 질문 변경</p>
+                <div style="display:flex;gap:10px;">
+                    <input type="text" id="adm-q-input" placeholder="질문 직접 입력 (비워두면 자동)" style="margin-bottom:0;flex:1;">
+                    <button class="btn-primary" onclick="window.updateManualQ()" style="flex-shrink:0;">변경</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="section-label">전체 기록 (날짜별)</p>
+                <div id="adm-today-approved"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. 학생명단 -->
+    <div id="adm-students" class="adm-tab-content">
+        <div class="card">
+            <div class="card-header"><span class="card-title">👥 학생 명단 관리</span></div>
+            <div class="card-body">
+                <p class="section-label">학생 추가 / 수정</p>
+                <div style="display:flex;gap:10px;align-items:flex-end;">
+                    <input type="number" id="adm-std-num" placeholder="번호" style="width:100px;margin-bottom:0;" min="1" max="99">
+                    <input type="text" id="adm-std-name" placeholder="이름" style="flex:1;margin-bottom:0;">
+                    <button class="btn-primary" id="adm-std-btn" onclick="window.saveStudent()" style="flex-shrink:0;">저장</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="section-label">등록된 학생</p>
+                <div id="adm-std-list"></div>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /.page-body -->
+
+<script>
+    // role badge 업데이트
+    const origApply = window.applyRoleUI || (() => {});
+    // show role badge after login
+    const _origTry = window.tryAdminLogin;
+    window.tryAdminLogin = function() {
+        _origTry();
+        const badge = document.getElementById('role-badge');
+        if (badge && window.adminRole) {
+            badge.innerText = window.adminRole === 'teacher' ? '선생님' : '회장단';
+            badge.style.display = 'inline-flex';
+        }
+    };
+</script>
 </body>
 </html>
