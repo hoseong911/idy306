@@ -109,7 +109,8 @@
             const name = document.getElementById('adm-std-name').value.trim();
             if (!num || !name) return window.showToast('번호와 이름을 모두 입력하세요.', 'error');
 
-            if (editingOriginalNum !== null && editingOriginalNum !== num) {
+            // 번호가 변경됐거나 key가 다른 경우 기존 항목 삭제
+            if (editingOriginalNum !== null && String(editingOriginalNum) !== String(num)) {
                 remove(ref(db, `class306/students/${editingOriginalNum}`));
             }
             set(ref(db, `class306/students/${num}`), { num, name });
@@ -120,18 +121,20 @@
             editingOriginalNum = null;
         };
 
-        window.editStudent = (num, name) => {
-            editingOriginalNum = num;
-            document.getElementById('adm-std-num').value = num;
-            document.getElementById('adm-std-name').value = name;
+        window.editStudent = (firebaseKey, num, name) => {
+            editingOriginalNum = firebaseKey; // Firebase 실제 키로 저장
+            document.getElementById('adm-std-num').value = num !== null ? num : '';
+            document.getElementById('adm-std-name').value = name || '';
             document.getElementById('adm-std-btn').innerText = '수정 완료';
             document.getElementById('adm-std-name').focus();
         };
 
-        window.deleteStudent = (num, name) => {
-            if (confirm(`[${num}번] ${name} 학생을 명단에서 삭제하시겠습니까?`)) {
-                remove(ref(db, `class306/students/${num}`));
-                window.showToast('명단에서 삭제되었습니다.');
+        // Firebase 실제 키(firebaseKey)로 삭제 — num이 undefined여도 동작
+        window.deleteStudent = (firebaseKey, displayNum, name) => {
+            if (confirm(`[${displayNum}번] ${name} 학생을 명단에서 삭제하시겠습니까?`)) {
+                remove(ref(db, `class306/students/${firebaseKey}`))
+                    .then(() => window.showToast('명단에서 삭제되었습니다.'))
+                    .catch(() => window.showToast('삭제 실패! 권한을 확인하세요.', 'error'));
             }
         };
 
@@ -139,21 +142,34 @@
             const list = document.getElementById('adm-std-list');
             if (!list) return;
             list.innerHTML = '';
-            const sorted = Object.values(studentsObj).sort((a, b) => a.num - b.num);
-            if (sorted.length === 0) {
+
+            // Object.entries로 Firebase 실제 키도 함께 가져오기
+            const entries = Object.entries(studentsObj)
+                .map(([key, val]) => {
+                    if (!val || typeof val !== 'object') return { key, num: undefined, name: undefined };
+                    return { key, num: val.num, name: val.name };
+                })
+                .sort((a, b) => (Number(a.num) || 0) - (Number(b.num) || 0));
+
+            if (entries.length === 0) {
                 list.innerHTML = "<p class='empty-msg'>등록된 학생이 없습니다.</p>";
                 return;
             }
-            sorted.forEach(s => {
+            entries.forEach(s => {
+                const displayNum = s.num !== undefined ? s.num : '?';
+                const displayName = s.name !== undefined ? s.name : '(이름 없음)';
+                const safeKey = String(s.key);
+                const safeName = displayName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 list.innerHTML += `
                     <div class="adm-cal-item">
                         <div class="adm-cal-info" style="flex:1;">
-                            <span class="adm-cal-date" style="width:30px;display:inline-block;text-align:center;">${s.num}</span>
-                            <span class="adm-cal-title" style="font-weight:800;">${s.name}</span>
+                            <span class="adm-cal-date" style="width:36px;display:inline-block;text-align:center;">${displayNum}</span>
+                            <span class="adm-cal-title" style="font-weight:800;">${displayName}</span>
+                            <span style="font-size:0.7rem;color:#CBD5E1;margin-left:4px;">key:${safeKey}</span>
                         </div>
                         <div style="display:flex;gap:6px;">
-                            <button class="btn-approve" style="background:#64748B;" onclick="window.editStudent(${s.num},'${s.name}')">수정</button>
-                            <button class="btn-danger-sm" onclick="window.deleteStudent(${s.num},'${s.name}')">삭제</button>
+                            <button class="btn-approve" style="background:#64748B;" onclick="window.editStudent('${safeKey}',${displayNum === '?' ? 'null' : displayNum},'${safeName}')">수정</button>
+                            <button class="btn-danger-sm" onclick="window.deleteStudent('${safeKey}','${displayNum}','${safeName}')">삭제</button>
                         </div>
                     </div>`;
             });
