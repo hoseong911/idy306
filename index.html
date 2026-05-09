@@ -66,7 +66,9 @@
         window.openLoginModal = (targetSection) => {
             pendingSection = targetSection || null;
             document.getElementById('login-modal').classList.add('open');
-            document.getElementById('login-num').focus();
+            // [수정1] 학번 input 포커스 & 타입 text로 (스크롤 방지)
+            const numInput = document.getElementById('login-num');
+            numInput.focus();
             document.getElementById('login-error').style.display = 'none';
         };
 
@@ -136,6 +138,11 @@
             input.removeAttribute('capture');
             input.click();
         };
+
+        // [수정8] 테스트 모드 상수
+        const TEST_NUM = '00000';
+        const TEST_NAME = '호성';
+        const TEST_PW = '0000';
     </script>
 
     <script type="module">
@@ -187,20 +194,48 @@
         });
 
         // ── 로그인 처리 ───────────────────────────────────────────────
+        // [수정1] 학번 30xxx 형식 파싱 헬퍼
+        function parseStudentNum(raw) {
+            const s = raw.trim();
+            // 30xxx 형식이면 뒤 3자리만 추출
+            if (/^30\d{3}$/.test(s)) return parseInt(s.slice(2));
+            // 숫자만 입력한 경우 그대로
+            if (/^\d+$/.test(s)) return parseInt(s);
+            return NaN;
+        }
+
         window.doLogin = async () => {
-            const numVal = document.getElementById('login-num').value.trim();
+            const rawNum = document.getElementById('login-num').value.trim();
             const nameVal = document.getElementById('login-name').value.trim();
             const pwVal = document.getElementById('login-pw').value;
             const errEl = document.getElementById('login-error');
             errEl.style.display = 'none';
 
-            if (!numVal || !nameVal || !pwVal) {
+            if (!rawNum || !nameVal || !pwVal) {
                 errEl.innerText = "모든 항목을 입력해주세요.";
                 errEl.style.display = 'block'; return;
             }
 
-            const num = parseInt(numVal);
-            // DB에서 학생 찾기
+            // [수정8] 테스트 모드 체크
+            if (rawNum === '00000' && nameVal === '호성' && pwVal === '0000') {
+                saveSession({ num: 0, name: '호성(테스트)', isTest: true });
+                updateNavUI();
+                updateDropdownsForUser();
+                window.closeLoginModal();
+                window.showToast("🧪 테스트 모드로 접속했어요!", 'levelup');
+                if (pendingSection) {
+                    window.showSection(pendingSection);
+                    pendingSection = null;
+                }
+                return;
+            }
+
+            const num = parseStudentNum(rawNum);
+            if (isNaN(num)) {
+                errEl.innerText = "학번을 올바르게 입력해주세요. (예: 30015)";
+                errEl.style.display = 'block'; return;
+            }
+
             const student = studentList.find(s => s.num === num && s.name === nameVal);
             if (!student) {
                 errEl.innerText = "학번 또는 이름이 올바르지 않아요.";
@@ -218,7 +253,53 @@
             updateNavUI();
             updateDropdownsForUser();
             window.closeLoginModal();
-            window.showToast(`${student.name} 학생, 환영해요! 👋`);
+
+            // [수정3] 초기 비밀번호(0000)면 강제 변경 팝업
+            const isFirstLogin = !student.pw || student.pw === '0000';
+            if (isFirstLogin) {
+                setTimeout(() => {
+                    openForcePwModal();
+                }, 400);
+                window.showToast(`${student.name} 학생, 환영해요! 비밀번호를 변경해 주세요 🔐`);
+            } else {
+                window.showToast(`${student.name} 학생, 환영해요! 👋`);
+            }
+
+            if (pendingSection && !isFirstLogin) {
+                window.showSection(pendingSection);
+                pendingSection = null;
+            }
+        };
+
+        // [수정3] 강제 비밀번호 변경 모달
+        window.openForcePwModal = () => {
+            document.getElementById('force-pw-modal').classList.add('open');
+            document.getElementById('force-pw-new').focus();
+        };
+
+        window.doForcePw = async () => {
+            if (!currentUser) return;
+            const next = document.getElementById('force-pw-new').value;
+            const next2 = document.getElementById('force-pw-new2').value;
+            const errEl = document.getElementById('force-pw-error');
+            errEl.style.display = 'none';
+
+            if (!next || next.length < 4) {
+                errEl.innerText = "새 비밀번호는 4자 이상이어야 해요.";
+                errEl.style.display = 'block'; return;
+            }
+            if (next === '0000') {
+                errEl.innerText = "초기 비밀번호와 같은 번호는 사용할 수 없어요.";
+                errEl.style.display = 'block'; return;
+            }
+            if (next !== next2) {
+                errEl.innerText = "비밀번호가 일치하지 않아요.";
+                errEl.style.display = 'block'; return;
+            }
+
+            await set(ref(db, `class306/students/${currentUser.num}/pw`), next);
+            document.getElementById('force-pw-modal').classList.remove('open');
+            window.showToast("비밀번호가 설정되었어요! 🎉");
 
             if (pendingSection) {
                 window.showSection(pendingSection);
@@ -226,7 +307,7 @@
             }
         };
 
-        // 비밀번호 변경
+        // 비밀번호 변경 (선택)
         window.doChangePw = async () => {
             if (!currentUser) return;
             const cur = document.getElementById('pw-cur').value;
@@ -259,12 +340,10 @@
         // 로그인 상태에 따라 드롭다운 자동 세팅
         function updateDropdownsForUser() {
             if (currentUser) {
-                // 이름 드롭다운 → 본인 이름으로 고정
                 ['cert-name','t-name','p-from'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) { el.value = currentUser.name; el.disabled = true; }
                 });
-                // p-to (칭찬 대상)는 선택 가능하게 유지
                 const pto = document.getElementById('p-to');
                 if (pto) pto.disabled = false;
             } else {
@@ -335,7 +414,6 @@
                 const{level,progress,nextRequired}=getLevel(earned);
                 const lvColor=getLevelColor(level);
                 const pct=Math.min((progress/nextRequired)*100,100);
-                // 본인 하이라이트
                 const isSelf = currentUser && currentUser.name === name;
                 container.innerHTML += `
                     <div class="rank-card ${rank<=3?'top-rank':''} ${isSelf?'self-rank':''}">
@@ -455,6 +533,12 @@
             const alreadySubmitted = Object.values(globalData.impression||{}).some(i=>i.name===name&&i.date===todayKR);
             if (alreadySubmitted) return window.showToast("오늘은 이미 기록했어요! 내일 또 참여해요 😊", 'error');
 
+            // [수정8] 테스트 모드면 DB 저장 없이 토스트만
+            if (currentUser.isTest) {
+                document.getElementById('t-content').value='';
+                return window.showToast("🧪 [테스트] 기록 완료! (실제 저장 안됨) +1P", 'levelup');
+            }
+
             try {
                 await push(ref(db,'class306/impression'),{name,content,question:q,date:todayKR,approved:true,time:new Date().toLocaleString('ko-KR')});
                 const [mSnap,eSnap] = await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
@@ -489,6 +573,15 @@
             if (!file) return window.showToast("사진을 선택해주세요.", 'error');
             if (!studyContent) return window.showToast("무엇을 공부했는지 입력해주세요.", 'error');
             if (getTodayCertCount(name)>=1) return window.showToast("오늘은 이미 체크했어요! 내일 또 해요 😊", 'error');
+
+            // [수정8] 테스트 모드
+            if (currentUser.isTest) {
+                document.getElementById('cert-file-input').value='';
+                document.getElementById('cert-study-content').value='';
+                document.getElementById('cert-preview').style.display='none';
+                document.getElementById('cert-placeholder').style.display='flex';
+                return window.showToast("🧪 [테스트] AI 판정 완료! (실제 저장 안됨)", 'levelup');
+            }
 
             const CLAUDE_API_KEY = globalData.config?.claudeApiKey||"";
             if (!CLAUDE_API_KEY) return window.showToast("API 키가 설정되지 않았습니다.", 'error');
@@ -604,18 +697,23 @@
         h1{font-weight:900;font-size:clamp(2rem,7vw,3.2rem);background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.05em;}
 
         /* ── 상단 유저 바 ── */
+        /* [수정5] 유저바는 헤더 바로 아래, 메뉴 위에 위치 (로그인 버튼만 메뉴 아래로 이동) */
         .user-bar{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;min-height:32px;flex-wrap:wrap;}
         .user-label{font-size:0.88rem;font-weight:800;color:var(--text-sub);padding:6px 14px;background:white;border-radius:20px;border:1px solid var(--border);}
-        .btn-login{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:var(--text);color:white;border:none;border-radius:20px;font-size:0.88rem;font-weight:800;cursor:pointer;font-family:inherit;}
+        /* [수정5] 로그인 버튼은 메뉴 아래로 이동 — .login-area-below에서 노출 */
+        .btn-login{display:inline-flex;align-items:center;gap:6px;padding:10px 22px;background:var(--text);color:white;border:none;border-radius:20px;font-size:0.92rem;font-weight:800;cursor:pointer;font-family:inherit;}
         .btn-logout{display:none;align-items:center;gap:6px;padding:8px 14px;background:white;color:var(--text-sub);border:1px solid var(--border);border-radius:20px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;}
         .btn-pw{display:inline-flex;align-items:center;gap:4px;padding:7px 12px;background:white;color:var(--text-sub);border:1px solid var(--border);border-radius:20px;font-size:0.8rem;font-weight:700;cursor:pointer;font-family:inherit;}
 
         /* ── 네비 ── */
-        nav{display:flex;gap:8px;margin:0 16px 20px;flex-wrap:wrap;justify-content:center;max-width:var(--max-w);width:100%;}
+        nav{display:flex;gap:8px;margin:0 16px 12px;flex-wrap:wrap;justify-content:center;max-width:var(--max-w);width:100%;}
         .nav-btn{padding:10px 16px;border:1px solid rgba(45,212,191,0.2);border-radius:16px;background:white;box-shadow:var(--shadow);cursor:pointer;font-weight:700;color:var(--text-sub);font-size:0.88rem;transition:all 0.2s;font-family:inherit;position:relative;}
         .nav-btn.active{background:var(--text);color:white;}
         .nav-btn.locked{color:#CBD5E1;border-color:#E2E8F0;background:#F8FAFC;}
         .nav-btn.locked::after{content:'🔒';font-size:0.7rem;position:absolute;top:-6px;right:-6px;background:white;border-radius:50%;padding:1px 3px;border:1px solid #E2E8F0;}
+
+        /* [수정5] 로그인 영역 — 메뉴 아래 */
+        .login-area-below{display:flex;justify-content:center;margin-bottom:20px;min-height:38px;}
 
         /* ── 배너 ── */
         .class-total-banner{width:calc(100% - 32px);max-width:var(--max-w);background:var(--grad);color:white;padding:20px;border-radius:var(--radius);margin-bottom:20px;box-shadow:var(--shadow);}
@@ -713,7 +811,11 @@
         .q-box{background:var(--blue-light);border-radius:16px;padding:18px;margin-bottom:18px;text-align:center;border:1px solid rgba(56,189,248,0.2);}
         .q-box h4{font-size:1.02rem;font-weight:800;}
         .auto-badge{display:inline-block;background:#DCFCE7;color:#15803D;font-size:0.78rem;font-weight:800;padding:3px 10px;border-radius:20px;margin-bottom:12px;}
+        /* [수정1] 학번 입력 - 스크롤 방지 */
         input[type="text"],input[type="number"],input[type="password"],textarea,select{width:100%;padding:13px 16px;margin-bottom:12px;border-radius:14px;border:1px solid rgba(0,0,0,0.1);font-family:inherit;font-size:0.95rem;color:var(--text);background:#F8FAFC;outline:none;}
+        input[type="number"]{-moz-appearance:textfield;}
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
         input:focus,textarea:focus,select:focus{border-color:var(--primary);background:white;}
         select:disabled{opacity:0.6;cursor:not-allowed;}
         .btn-main{width:100%;padding:15px;border:none;border-radius:14px;background:var(--text);color:white;font-weight:800;cursor:pointer;font-family:inherit;font-size:1rem;}
@@ -735,6 +837,9 @@
         .btn-confirm{width:100%;padding:14px;border:none;border-radius:14px;background:var(--grad);color:white;font-weight:800;cursor:pointer;font-family:inherit;font-size:1rem;margin-bottom:10px;}
         .btn-modal-close{width:100%;padding:12px;border:1px solid var(--border);border-radius:14px;background:white;color:var(--text-sub);font-weight:700;cursor:pointer;font-family:inherit;font-size:0.92rem;}
 
+        /* [수정3] 강제 비번 변경 모달 강조 스타일 */
+        .force-pw-notice{background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:12px 16px;font-size:0.85rem;color:#92400E;font-weight:700;margin-bottom:16px;text-align:left;line-height:1.6;}
+
         @keyframes fadeIn{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
         @media(max-width:480px){.rank-grid{grid-template-columns:repeat(3,1fr);}nav{gap:6px;}.nav-btn{padding:9px 12px;font-size:0.82rem;}}
     </style>
@@ -748,17 +853,35 @@
     <div class="modal-box">
         <div class="modal-icon">🔐</div>
         <h2>로그인</h2>
-        <p class="modal-sub">학번 · 이름 · 비밀번호를 입력하세요<br><small style="color:#94A3B8;">초기 비밀번호: 0000</small></p>
+        <!-- [수정1] 학번 30xxx 형식 안내 -->
+        <p class="modal-sub">학번 · 이름 · 비밀번호를 입력하세요<br><small style="color:#94A3B8;">학번 예: 30015 &nbsp;|&nbsp; 초기 비밀번호: 0000</small></p>
         <div id="login-error" class="modal-error"></div>
-        <input type="number" id="login-num" placeholder="학번 (예: 1, 15, 30)" min="1" max="99" onkeydown="if(event.key==='Enter')document.getElementById('login-name').focus()">
+        <!-- [수정1] type="text" 로 변경하여 스크롤 방지 -->
+        <input type="text" id="login-num" placeholder="학번 (예: 30015)" inputmode="numeric" onkeydown="if(event.key==='Enter')document.getElementById('login-name').focus()">
         <input type="text" id="login-name" placeholder="이름" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()">
         <input type="password" id="login-pw" placeholder="비밀번호" onkeydown="if(event.key==='Enter')window.doLogin()">
-        <button class="btn-confirm" onclick="window.doLogin()">로그인 →</button>
+        <button class="btn-confirm" onclick="window.doLogin()">로그인</button>
         <button class="btn-modal-close" onclick="window.closeLoginModal()">닫기</button>
     </div>
 </div>
 
-<!-- 비밀번호 변경 모달 -->
+<!-- [수정3] 강제 비밀번호 변경 모달 (초기 로그인 시) -->
+<div id="force-pw-modal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-icon">🔑</div>
+        <h2>비밀번호 설정</h2>
+        <div class="force-pw-notice">
+            초기 비밀번호(0000)로는 계속 사용할 수 없어요.<br>
+            나만의 비밀번호로 변경해 주세요!
+        </div>
+        <div id="force-pw-error" class="modal-error"></div>
+        <input type="password" id="force-pw-new" placeholder="새 비밀번호 (4자 이상)" onkeydown="if(event.key==='Enter')document.getElementById('force-pw-new2').focus()">
+        <input type="password" id="force-pw-new2" placeholder="새 비밀번호 확인" onkeydown="if(event.key==='Enter')window.doForcePw()">
+        <button class="btn-confirm" onclick="window.doForcePw()">설정 완료</button>
+    </div>
+</div>
+
+<!-- 비밀번호 변경 모달 (선택) -->
 <div id="pw-modal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-icon">🔑</div>
@@ -774,10 +897,9 @@
 
 <header><h1>INTO THE 306 WORLD</h1></header>
 
-<!-- 유저 상태 바 -->
-<div class="user-bar">
+<!-- 유저 상태 바 (로그인 후 유저 정보 + 로그아웃/비번변경 버튼) -->
+<div class="user-bar" id="user-bar-top">
     <span id="nav-user-label" class="user-label" style="display:none;"></span>
-    <button class="btn-login" id="nav-login-btn" onclick="window.openLoginModal()">🔐 로그인</button>
     <button class="btn-logout" id="nav-logout-btn" onclick="window.doLogout()">로그아웃</button>
     <button class="btn-pw" id="nav-pw-btn" onclick="window.openPwModal()" style="display:none;">🔑 비밀번호 변경</button>
 </div>
@@ -785,10 +907,18 @@
 <nav>
     <button class="nav-btn active" onclick="window.showSection('home')" id="btn-home">🏠 홈</button>
     <button class="nav-btn" onclick="window.showSection('mileage')" id="btn-mileage">⭐ 마일리지</button>
-    <button class="nav-btn locked" onclick="window.showSection('study')" id="btn-study">📚 스터디</button>
+    <!-- [수정6] 스터디 체크로 이름 변경 -->
+    <button class="nav-btn locked" onclick="window.showSection('study')" id="btn-study">📚 스터디 체크</button>
     <button class="nav-btn locked" onclick="window.showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
     <button class="nav-btn locked" onclick="window.showSection('today')" id="btn-today">✏️ 오늘하루</button>
+    <!-- [수정4] 관리자 버튼 -->
+    <button class="nav-btn" onclick="location.href='admin.html'" id="btn-admin" style="border-color:rgba(99,102,241,0.3);color:#6366F1;">🔧 관리자</button>
 </nav>
+
+<!-- [수정5] 로그인 버튼 — 메뉴 아래 -->
+<div class="login-area-below" id="login-area-below">
+    <button class="btn-login" id="nav-login-btn" onclick="window.openLoginModal()">🔐 로그인</button>
+</div>
 
 <div class="class-total-banner">
     <div class="total-info">
@@ -838,7 +968,7 @@
             <div class="lock-icon">🔒</div>
             <h3>로그인이 필요해요</h3>
             <p>스터디 체크 기능은<br>로그인 후 이용할 수 있어요.</p>
-            <button class="btn-login-big" onclick="window.openLoginModal('study')">로그인하기 →</button>
+            <button class="btn-login-big" onclick="window.openLoginModal('study')">로그인하기</button>
         </div>
     </div>
     <div id="study-content" style="display:none;">
@@ -886,7 +1016,7 @@
             <div class="lock-icon">🔒</div>
             <h3>로그인이 필요해요</h3>
             <p>칭찬감옥은<br>로그인 후 이용할 수 있어요.</p>
-            <button class="btn-login-big" onclick="window.openLoginModal('praise')">로그인하기 →</button>
+            <button class="btn-login-big" onclick="window.openLoginModal('praise')">로그인하기</button>
         </div>
     </div>
     <div id="praise-content" style="display:none;">
@@ -904,6 +1034,7 @@
                     <input type="text" id="p-when" placeholder="📅 언제? (예: 오늘 점심시간, 어제 쉬는 시간)">
                     <input type="text" id="p-where" placeholder="📍 어디서? (예: 급식실, 복도, 교실)">
                     <textarea id="p-content" rows="3" placeholder="✏️ 무엇을 했나요? 칭찬 내용을 자세히 적어주세요!"></textarea>
+                    <!-- [수정2] 버튼 화살표 제거 -->
                     <button class="btn-main" onclick="window.submitPraise()">제보하기 ✉️</button>
                 </div>
             </div>
@@ -925,7 +1056,7 @@
             <div class="lock-icon">🔒</div>
             <h3>로그인이 필요해요</h3>
             <p>오늘 하루 기록은<br>로그인 후 이용할 수 있어요.</p>
-            <button class="btn-login-big" onclick="window.openLoginModal('today')">로그인하기 →</button>
+            <button class="btn-login-big" onclick="window.openLoginModal('today')">로그인하기</button>
         </div>
     </div>
     <div id="today-content" style="display:none;">
@@ -943,6 +1074,7 @@
                         <div style="background:#F0FDFA;border-radius:12px;padding:11px 16px;font-size:0.88rem;color:var(--primary);font-weight:700;margin-bottom:14px;">👤 <span id="t-name-display"></span></div>
                         <input type="hidden" id="t-name">
                         <textarea id="t-content" rows="3" placeholder="오늘의 생각을 기록하세요 ✏️"></textarea>
+                        <!-- [수정2] 버튼 화살표 제거 -->
                         <button class="btn-main" onclick="window.submitToday()">기록하기</button>
                     </div>
                 </div>
@@ -967,11 +1099,15 @@ window.updateNavUI = function() {
     const userLabel = document.getElementById('nav-user-label');
     const pwBtn = document.getElementById('nav-pw-btn');
     const logoutBtn = document.getElementById('nav-logout-btn');
+    // [수정5] 로그인 버튼은 메뉴 아래 영역에서만 제어
+    const loginBtn = document.getElementById('nav-login-btn');
+    const loginArea = document.getElementById('login-area-below');
 
     if (currentUser) {
         if (userLabel) { userLabel.innerText = `${currentUser.num}번 ${currentUser.name}`; userLabel.style.display='inline-block'; }
         if (pwBtn) pwBtn.style.display='inline-flex';
         if (logoutBtn) logoutBtn.style.display='inline-flex';
+        if (loginArea) loginArea.style.display='none'; // 로그인 상태면 버튼 숨김
 
         // 보호 섹션 콘텐츠 표시
         ['study','praise','today'].forEach(id => {
@@ -1001,6 +1137,7 @@ window.updateNavUI = function() {
         if (userLabel) { userLabel.innerText=''; userLabel.style.display='none'; }
         if (pwBtn) pwBtn.style.display='none';
         if (logoutBtn) logoutBtn.style.display='none';
+        if (loginArea) loginArea.style.display='flex'; // 비로그인 상태면 버튼 표시
 
         // 보호 섹션 잠금 화면 표시
         ['study','praise','today'].forEach(id => {
