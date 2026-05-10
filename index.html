@@ -171,10 +171,13 @@
             updateNavUI(); updateDropdownsForUser();
         });
 
+        // 학번 파싱: 306xx 형식(5자리)에서 뒤 2자리(번호)를 추출
+        // 예: 30601 → 1번, 30610 → 10번, 30633 → 33번
+        // 짧게 입력한 경우(예: "1", "10")도 그대로 번호로 처리
         function parseStudentNum(raw) {
             const s = raw.trim();
-            if (/^30\d{3}$/.test(s)) return parseInt(s.slice(2));
-            if (/^\d+$/.test(s)) return parseInt(s);
+            if (/^306\d{2}$/.test(s)) return parseInt(s.slice(3), 10);
+            if (/^\d{1,2}$/.test(s)) return parseInt(s, 10);
             return NaN;
         }
 
@@ -193,7 +196,7 @@
                 return;
             }
             const num = parseStudentNum(rawNum);
-            if (isNaN(num)) { errEl.innerText="학번을 올바르게 입력해주세요. (예: 30015)"; errEl.style.display='block'; return; }
+            if (isNaN(num)) { errEl.innerText="학번을 올바르게 입력해주세요. (예: 30601)"; errEl.style.display='block'; return; }
             const student = studentList.find(s => s.num===num && s.name===nameVal);
             if (!student) { errEl.innerText="학번 또는 이름이 올바르지 않아요."; errEl.style.display='block'; return; }
             const storedPw = student.pw || "0000";
@@ -830,9 +833,9 @@
     <div class="modal-box">
         <div class="modal-icon">🔐</div>
         <h2>로그인</h2>
-        <p class="modal-sub">학번 · 이름 · 비밀번호를 입력하세요<br><small style="color:#94A3B8;">학번 예: 30015 · 초기 비밀번호: 0000</small></p>
+        <p class="modal-sub">학번 · 이름 · 비밀번호를 입력하세요<br><small style="color:#94A3B8;">학번 예: 30601 · 초기 비밀번호: 0000</small></p>
         <div id="login-error" class="modal-error"></div>
-        <input type="text" id="login-num" placeholder="학번 (예: 30015)" inputmode="numeric" onkeydown="if(event.key==='Enter')document.getElementById('login-name').focus()">
+        <input type="text" id="login-num" placeholder="학번 (예: 30601)" inputmode="numeric" onkeydown="if(event.key==='Enter')document.getElementById('login-name').focus()">
         <input type="text" id="login-name" placeholder="이름" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()">
         <input type="password" id="login-pw" placeholder="비밀번호" onkeydown="if(event.key==='Enter')window.doLogin()">
         <button class="btn-confirm" onclick="window.doLogin()">로그인</button>
