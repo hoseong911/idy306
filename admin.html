@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>306 WORLD — 관리자</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 
     <script>
         const PW_TEACHER = btoa("ghtjd12!@");
@@ -528,7 +526,7 @@
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 15px;
             font-weight: 300;
             line-height: 1.6;
@@ -616,6 +614,9 @@
             padding: 0 32px;
             position: relative;
             z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .adm-tab-nav {
@@ -1056,7 +1057,7 @@
 <div class="mesh-hero">
     <div class="top-bar">
         <div class="top-bar-left">
-            <a href="dashboard.html" class="back-link">← 대시보드</a>
+            <a href="index.html" class="back-link">← 대시보드</a>
             <div class="wordmark">306 <span>WORLD</span> <span style="color:var(--ink-mute);font-weight:300;">관리자</span></div>
         </div>
         <span class="role-badge" id="role-badge" style="display:none;">선생님</span>
@@ -1099,7 +1100,7 @@
 
     <!-- 2. 마일리지 -->
     <div id="adm-mileage" class="adm-tab-content">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
             <div>
                 <div class="card">
                     <div class="card-header"><span class="card-title">⚙️ 적립 설정</span></div>
