@@ -687,21 +687,24 @@
 
         /* ── 헤더: 중앙정렬 ── */
         .top-bar {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
             align-items: center;
-            justify-content: center; /* 중앙 정렬 */
             max-width: var(--max-w);
             margin: 0 auto;
-            padding: 20px 32px;
+            padding: 20px 24px;
             position: relative;
             z-index: 1;
-            gap: 16px;
         }
         .top-bar-left {
-            display: flex; align-items: center; gap: 16px;
+            display: flex; align-items: center; gap: 10px;
+            justify-content: flex-start;
+        }
+        .top-bar-center {
+            display: flex; align-items: center; justify-content: center;
         }
         .top-bar-right {
-            position: absolute; right: 32px; /* 배지는 우측 고정 */
+            display: flex; align-items: center; justify-content: flex-end;
         }
 
         .back-link {
@@ -725,26 +728,34 @@
         }
 
         .tab-nav-wrap {
-            max-width: var(--max-w); margin: 0 auto; padding: 0 32px;
+            max-width: var(--max-w); margin: 0 auto; padding: 0 16px;
             position: relative; z-index: 1;
             display: flex; flex-direction: column; align-items: center;
         }
 
         .adm-tab-nav {
-            display: flex; gap: 2px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
             background: rgba(255,255,255,0.55); backdrop-filter: blur(12px);
             border: 1px solid rgba(255,255,255,0.6); border-radius: var(--radius-lg);
-            padding: 6px; width: fit-content; margin-bottom: 0;
+            padding: 6px; width: 100%; max-width: 480px;
             box-shadow: var(--shadow-1);
+            overflow: hidden;
         }
 
         .adm-tab-btn {
-            padding: 9px 20px; border: none; border-radius: var(--radius-md);
-            background: transparent; font-family: inherit; font-size: 14px; font-weight: 400;
-            color: var(--ink-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap;
+            padding: 9px 10px; border: none; border-radius: var(--radius-md);
+            background: transparent; font-family: inherit; font-size: 13px; font-weight: 400;
+            color: var(--ink-secondary); cursor: pointer; transition: all 0.15s;
+            white-space: nowrap; text-align: center;
         }
         .adm-tab-btn:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
         .adm-tab-btn.active { background: white; color: var(--ink); font-weight: 500; box-shadow: var(--shadow-1); }
+
+        /* 스크롤바 전체 숨김 */
+        * { scrollbar-width: none; }
+        *::-webkit-scrollbar { display: none; }
 
         .hero-pad { padding-bottom: 32px; }
 
@@ -897,11 +908,12 @@
         .shake { animation: shake 0.35s ease; }
 
         @media (max-width: 768px) {
-            .top-bar { padding: 16px 20px; }
-            .top-bar-right { right: 20px; }
-            .tab-nav-wrap { padding: 0 16px; }
-            .adm-tab-nav { width: 100%; overflow-x: auto; }
-            .adm-tab-btn { padding: 8px 14px; font-size: 13px; }
+            .top-bar { padding: 16px 16px; }
+            .wordmark { font-size: 15px; }
+            .back-link { font-size: 13px; padding: 6px 10px; }
+            .tab-nav-wrap { padding: 0 12px; }
+            .adm-tab-nav { max-width: 100%; }
+            .adm-tab-btn { padding: 8px 6px; font-size: 12px; }
             .page-body { padding: 20px 16px 48px; }
             .card-body { padding: 18px 20px; }
             .card-header { padding: 16px 20px; }
@@ -941,6 +953,8 @@
     <div class="top-bar">
         <div class="top-bar-left">
             <a href="index.html" class="back-link">← 대시보드</a>
+        </div>
+        <div class="top-bar-center">
             <div class="wordmark">306 <span>WORLD</span> <span style="color:var(--ink-mute);font-weight:300;">관리자</span></div>
         </div>
         <div class="top-bar-right">
