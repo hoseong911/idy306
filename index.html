@@ -17,6 +17,14 @@
         loadSession();
 
         const PROTECTED = ['study','praise','today'];
+        // 글쓰기 권한: 관리자(isTest), 11번 문지민, 23번 제윤아
+        const NOTICE_WRITERS = [11, 23]; // 번호
+
+        window.canWriteNotice = () => {
+            if (!currentUser) return false;
+            if (currentUser.isTest) return true; // 관리자(테스트모드)
+            return NOTICE_WRITERS.includes(currentUser.num);
+        };
 
         window.showSection = (id) => {
             if (PROTECTED.includes(id) && !currentUser) { openLoginModal(id); return; }
@@ -59,6 +67,7 @@
             const active = document.querySelector('.content-section.active');
             if (active && PROTECTED.includes(active.id)) window.showSection('home');
             updateDropdownsForUser();
+            updateNoticeWriteBtn();
             window.showToast("로그아웃 되었습니다.");
         };
 
@@ -113,7 +122,13 @@
                     if (content) content.style.display='none';
                 });
             }
+            updateNoticeWriteBtn();
         }
+
+        window.updateNoticeWriteBtn = () => {
+            const btn = document.getElementById('notice-write-btn');
+            if (btn) btn.style.display = window.canWriteNotice() ? 'inline-flex' : 'none';
+        };
 
         window.previewCertPhoto = (input) => {
             const file = input.files[0]; if (!file) return;
@@ -126,12 +141,21 @@
         window.triggerCamera = () => { const i=document.getElementById('cert-file-input'); i.setAttribute('capture','environment'); i.click(); };
         window.triggerGallery = () => { const i=document.getElementById('cert-file-input'); i.removeAttribute('capture'); i.click(); };
 
+        window.previewNoticePhoto = (input) => {
+            const file = input.files[0]; if (!file) return;
+            const preview = document.getElementById('notice-img-preview');
+            const placeholder = document.getElementById('notice-img-placeholder');
+            const reader = new FileReader();
+            reader.onload = (e) => { preview.src = e.target.result; preview.style.display='block'; placeholder.style.display='none'; };
+            reader.readAsDataURL(file);
+        };
+
         const TEST_NUM = '00000', TEST_NAME = '호성', TEST_PW = '0000';
     </script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-        import { getDatabase, ref, set, push, onValue, get } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+        import { getDatabase, ref, set, push, onValue, get, update, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
         import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-storage.js";
 
         const firebaseConfig = {
@@ -154,6 +178,10 @@
 
         let CERT_MILEAGE = 3, globalData = {}, studentList = [];
 
+        // 현재 선택된 평가안내 탭
+        let currentNoticeSubject = '전체';
+        let editingNoticeId = null;
+
         onValue(ref(db, 'class306'), snapshot => {
             globalData = snapshot.val() || {};
             studentList = globalData.students ? Object.values(globalData.students).sort((a,b) => a.num - b.num) : [];
@@ -165,15 +193,13 @@
             renderToday(globalData.impression || {});
             renderMileageGuide(globalData.config || {});
             renderStudyCertHistory(globalData.studyCert || {});
+            renderNotices(globalData.notices || {}, currentNoticeSubject);
             const todayStr = new Date().toLocaleDateString('ko-KR', {month:'long',day:'numeric',weekday:'short'});
             const el = document.getElementById('display-date'); if (el) el.innerText = todayStr;
             autoSetDailyQuestion(globalData.config || {});
             updateNavUI(); updateDropdownsForUser();
         });
 
-        // 학번 파싱: 306xx 형식(5자리)에서 뒤 2자리(번호)를 추출
-        // 예: 30601 → 1번, 30610 → 10번, 30633 → 33번
-        // 짧게 입력한 경우(예: "1", "10")도 그대로 번호로 처리
         function parseStudentNum(raw) {
             const s = raw.trim();
             if (/^306\d{2}$/.test(s)) return parseInt(s.slice(3), 10);
@@ -353,8 +379,12 @@
             const from=currentUser.name, to=document.getElementById('p-to').value, when=document.getElementById('p-when').value.trim(), where=document.getElementById('p-where').value.trim(), content=document.getElementById('p-content').value.trim();
             if(!to||!when||!where||!content) return window.showToast("모든 항목을 입력해주세요.", 'error');
             if(from===to) return window.showToast("자기 자신은 칭찬할 수 없어요!", 'error');
+            // 공백 제외 30자 이상
+            const contentNoSpace = content.replace(/\s/g,'');
+            if(contentNoSpace.length < 30) return window.showToast(`칭찬 내용을 공백 제외 30자 이상 작성해주세요! (현재 ${contentNoSpace.length}자)`, 'error');
             push(ref(db,'class306/praise'),{from,to,when,where,content,approved:false,time:new Date().toLocaleString('ko-KR')});
             ['p-to','p-when','p-where','p-content'].forEach(id=>document.getElementById(id).value='');
+            updateCharCount('p-content','p-content-count',30);
             window.showToast("제보 완료! 선생님 승인 후 공개돼요 😊");
         };
 
@@ -396,18 +426,25 @@
             if(!currentUser) return window.showToast("로그인이 필요합니다.", 'error');
             const name=currentUser.name, content=document.getElementById('t-content').value.trim(), q=document.getElementById('daily-q-text').innerText;
             if(!content) return window.showToast("내용을 입력하세요.", 'error');
+            // 공백 제외 20자 이상
+            const contentNoSpace = content.replace(/\s/g,'');
+            if(contentNoSpace.length < 20) return window.showToast(`공백 제외 20자 이상 작성해주세요! (현재 ${contentNoSpace.length}자)`, 'error');
             const todayKR=new Date().toLocaleDateString('ko-KR');
             const already=Object.values(globalData.impression||{}).some(i=>i.name===name&&i.date===todayKR);
             if(already) return window.showToast("오늘은 이미 기록했어요! 내일 또 참여해요 😊", 'error');
-            if(currentUser.isTest){document.getElementById('t-content').value='';return window.showToast("🧪 [테스트] 기록 완료! (실제 저장 안됨) +1P",'levelup');}
+            if(currentUser.isTest){document.getElementById('t-content').value='';updateCharCount('t-content','t-content-count',20);return window.showToast("🧪 [테스트] 기록 완료! (실제 저장 안됨) +1P",'levelup');}
             try {
                 await push(ref(db,'class306/impression'),{name,content,question:q,date:todayKR,approved:true,time:new Date().toLocaleString('ko-KR')});
                 const[mSnap,eSnap]=await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
                 const cur=mSnap.val()||0,earned=eSnap.val()||cur,afterEarned=earned+1;
                 await set(ref(db,`class306/mileage/${name}`),cur+1);
                 await set(ref(db,`class306/totalEarned/${name}`),afterEarned);
+                // 마일리지 로그 기록
+                await push(ref(db,`class306/mileageLog/${name}`),{reason:'오늘하루',score:1,date:new Date().toISOString().slice(0,10),time:new Date().toLocaleString('ko-KR')});
                 if(getLevel(earned).level<getLevel(afterEarned).level) setTimeout(()=>window.showToast(`🎉 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),800);
-                document.getElementById('t-content').value=''; window.showToast("기록 완료! +1P 자동 적립 ✅");
+                document.getElementById('t-content').value='';
+                updateCharCount('t-content','t-content-count',20);
+                window.showToast("기록 완료! +1P 자동 적립 ✅");
             } catch(e){window.showToast("오류가 발생했어요.",'error');}
         };
 
@@ -444,7 +481,15 @@
                 try{const ext=file.name.split('.').pop()||'jpg',storageRef=sRef(storage,`studyCert/${name}_${Date.now()}.${ext}`);await uploadBytes(storageRef,file);photoURL=await getDownloadURL(storageRef);}catch(e){console.warn("Storage 업로드 실패:",e);}
                 const certData={name,date:todayISO,time:new Date().toLocaleString('ko-KR'),studyContent,result:result.pass?'pass':'fail',reason:result.reason,photoDate:result.photo_date||'없음',emoji:result.emoji,photoURL,mileage:result.pass?CERT_MILEAGE:0};
                 await push(ref(db,'class306/studyCert'),certData);
-                if(result.pass){const[mSnap,eSnap]=await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);const before=mSnap.val()||0,beforeEarned=eSnap.val()||before,afterEarned=beforeEarned+CERT_MILEAGE;await set(ref(db,`class306/mileage/${name}`),before+CERT_MILEAGE);await set(ref(db,`class306/totalEarned/${name}`),afterEarned);if(getLevel(beforeEarned).level<getLevel(afterEarned).level)setTimeout(()=>window.showToast(`🎉 ${name} 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),1200);}
+                if(result.pass){
+                    const[mSnap,eSnap]=await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
+                    const before=mSnap.val()||0,beforeEarned=eSnap.val()||before,afterEarned=beforeEarned+CERT_MILEAGE;
+                    await set(ref(db,`class306/mileage/${name}`),before+CERT_MILEAGE);
+                    await set(ref(db,`class306/totalEarned/${name}`),afterEarned);
+                    // 마일리지 로그
+                    await push(ref(db,`class306/mileageLog/${name}`),{reason:'스터디 체크',score:CERT_MILEAGE,date:todayISO,time:new Date().toLocaleString('ko-KR')});
+                    if(getLevel(beforeEarned).level<getLevel(afterEarned).level)setTimeout(()=>window.showToast(`🎉 ${name} 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),1200);
+                }
                 showCertResult(result,name,studyContent);
             }catch(err){window.showToast("오류가 발생했어요. 잠시 후 다시 시도해주세요.",'error');}
             finally{btn.disabled=false;btn.innerText="스터디 체크하기";document.getElementById('cert-file-input').value='';document.getElementById('cert-study-content').value='';document.getElementById('cert-preview').style.display='none';document.getElementById('cert-placeholder').style.display='flex';}
@@ -481,12 +526,148 @@
             });
         };
 
+        // ── 평가 안내 ──────────────────────────────────────────
+        const NOTICE_SUBJECTS = ['전체','국어','영어','수학','사회','역사','과학','정보','음악','미술','체육','정기시험'];
+
+        window.selectNoticeSubject = (btn, subject) => {
+            document.querySelectorAll('.notice-subject-btn').forEach(b=>b.classList.remove('active'));
+            btn.classList.add('active');
+            currentNoticeSubject = subject;
+            renderNotices(globalData.notices||{}, subject);
+        };
+
+        function renderNotices(noticesObj, subject) {
+            const container = document.getElementById('notice-list'); if(!container) return;
+            container.innerHTML='';
+            let entries = Object.entries(noticesObj).sort((a,b)=>new Date(b[1].time)-new Date(a[1].time));
+            if(subject !== '전체') entries = entries.filter(([,n])=>n.subject===subject);
+            if(entries.length===0){ container.innerHTML="<p class='empty-msg'>등록된 평가 안내가 없어요 📋</p>"; return; }
+            entries.forEach(([id,n])=>{
+                const canEdit = currentUser && (currentUser.isTest || currentUser.num === n.writerNum);
+                container.innerHTML+=`
+                <div class="notice-card" id="notice-card-${id}">
+                    <div class="notice-card-header">
+                        <span class="notice-subject-tag">${n.subject}</span>
+                        <span class="notice-date">${n.date||''}</span>
+                    </div>
+                    <div class="notice-title">${n.title}</div>
+                    <div class="notice-writer">✏️ ${n.writerName}</div>
+                    ${n.photoURL?`<img src="${n.photoURL}" class="notice-photo" alt="수행평가 안내" onclick="window.openPhotoModal('${n.photoURL}')">`:''}
+                    ${canEdit?`<div class="notice-actions">
+                        <button class="btn-notice-edit" onclick="window.openNoticeEdit('${id}')">수정</button>
+                        <button class="btn-notice-del" onclick="window.deleteNotice('${id}')">삭제</button>
+                    </div>`:''}
+                </div>`;
+            });
+        }
+
+        window.openNoticeWrite = () => {
+            if(!window.canWriteNotice()) return window.showToast("글쓰기 권한이 없어요.", 'error');
+            editingNoticeId = null;
+            document.getElementById('notice-form-title-text').innerText = '새 평가 안내 등록';
+            document.getElementById('notice-title-input').value='';
+            document.getElementById('notice-subject-select').value='국어';
+            document.getElementById('notice-img-input').value='';
+            document.getElementById('notice-img-preview').style.display='none';
+            document.getElementById('notice-img-placeholder').style.display='flex';
+            document.getElementById('notice-form-modal').classList.add('open');
+        };
+
+        window.openNoticeEdit = (id) => {
+            const n = globalData.notices?.[id]; if(!n) return;
+            if(!currentUser || (!currentUser.isTest && currentUser.num !== n.writerNum)) return window.showToast("수정 권한이 없어요.", 'error');
+            editingNoticeId = id;
+            document.getElementById('notice-form-title-text').innerText = '평가 안내 수정';
+            document.getElementById('notice-title-input').value = n.title||'';
+            document.getElementById('notice-subject-select').value = n.subject||'국어';
+            document.getElementById('notice-img-input').value='';
+            if(n.photoURL){
+                document.getElementById('notice-img-preview').src=n.photoURL;
+                document.getElementById('notice-img-preview').style.display='block';
+                document.getElementById('notice-img-placeholder').style.display='none';
+            } else {
+                document.getElementById('notice-img-preview').style.display='none';
+                document.getElementById('notice-img-placeholder').style.display='flex';
+            }
+            document.getElementById('notice-form-modal').classList.add('open');
+        };
+
+        window.closeNoticeForm = () => {
+            document.getElementById('notice-form-modal').classList.remove('open');
+            editingNoticeId = null;
+        };
+
+        window.submitNotice = async () => {
+            if(!window.canWriteNotice()) return window.showToast("권한이 없어요.", 'error');
+            const title = document.getElementById('notice-title-input').value.trim();
+            const subject = document.getElementById('notice-subject-select').value;
+            const file = document.getElementById('notice-img-input').files[0];
+            if(!title) return window.showToast("제목을 입력해주세요.", 'error');
+            const btn = document.getElementById('notice-submit-btn');
+            btn.disabled=true; btn.innerText="저장 중...";
+            try {
+                let photoURL = '';
+                if(editingNoticeId && globalData.notices?.[editingNoticeId]?.photoURL && !file){
+                    photoURL = globalData.notices[editingNoticeId].photoURL;
+                }
+                if(file){
+                    const ext=file.name.split('.').pop()||'jpg';
+                    const storageRef=sRef(storage,`notices/${Date.now()}.${ext}`);
+                    await uploadBytes(storageRef,file);
+                    photoURL=await getDownloadURL(storageRef);
+                }
+                const data = {
+                    title, subject, photoURL,
+                    writerName: currentUser.name,
+                    writerNum: currentUser.num,
+                    date: new Date().toLocaleDateString('ko-KR'),
+                    time: new Date().toLocaleString('ko-KR')
+                };
+                if(editingNoticeId){
+                    await update(ref(db,`class306/notices/${editingNoticeId}`), data);
+                    window.showToast("수정되었습니다.");
+                } else {
+                    await push(ref(db,'class306/notices'), data);
+                    window.showToast("등록되었습니다! 📋");
+                }
+                window.closeNoticeForm();
+            } catch(e){ window.showToast("오류가 발생했어요.", 'error'); }
+            finally{ btn.disabled=false; btn.innerText="저장"; }
+        };
+
+        window.deleteNotice = async (id) => {
+            const n = globalData.notices?.[id]; if(!n) return;
+            if(!currentUser || (!currentUser.isTest && currentUser.num !== n.writerNum)) return window.showToast("삭제 권한이 없어요.", 'error');
+            if(!confirm("이 평가 안내를 삭제할까요?")) return;
+            await remove(ref(db,`class306/notices/${id}`));
+            window.showToast("삭제되었습니다.");
+        };
+
+        window.openPhotoModal = (url) => {
+            document.getElementById('photo-modal-img').src = url;
+            document.getElementById('photo-modal').classList.add('open');
+        };
+        window.closePhotoModal = () => { document.getElementById('photo-modal').classList.remove('open'); };
+
         function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
+
+        // 글자수 카운터
+        function updateCharCount(textareaId, countId, minLen) {
+            const ta = document.getElementById(textareaId);
+            const cnt = document.getElementById(countId);
+            if(!ta||!cnt) return;
+            const len = ta.value.replace(/\s/g,'').length;
+            cnt.innerText = `${len}/${minLen}자 (공백 제외)`;
+            cnt.style.color = len >= minLen ? 'var(--green)' : 'var(--ink-mute)';
+        }
+
+        window.onTContentInput = () => updateCharCount('t-content','t-content-count',20);
+        window.onPContentInput = () => updateCharCount('p-content','p-content-count',30);
+
         updateNavUI();
     </script>
 
     <style>
-        /* ── Stripe Design System ─────────────────────────── */
         :root {
             --primary: #533afd;
             --primary-deep: #4434d4;
@@ -505,6 +686,7 @@
             --green: #1a7f5a; --green-bg: #e6f6f0;
             --red: #c0392b;   --red-bg: #fdf0ef;
             --study: #6366F1; --study-bg: #eef2ff;
+            --notice: #d97706; --notice-bg: #fef3c7;
             --shadow-1: rgba(0,55,112,0.07) 0 1px 3px;
             --shadow-2: rgba(0,55,112,0.08) 0 8px 24px, rgba(0,55,112,0.04) 0 2px 6px;
             --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 20px; --pill: 9999px;
@@ -523,7 +705,6 @@
             padding-bottom: 80px;
         }
 
-        /* ── Gradient Mesh Hero ───────────────────────── */
         .site-hero {
             width: 100%;
             background: linear-gradient(135deg,
@@ -543,7 +724,6 @@
             pointer-events: none;
         }
 
-        /* ── Top bar ──────────────────────────────────── */
         .top-bar {
             display: flex; align-items: center; justify-content: center;
             gap: 10px; padding: 20px 16px 12px;
@@ -568,7 +748,6 @@
         }
         .btn-logout:hover, .btn-pw:hover { background: white; color: var(--ink); }
 
-        /* ── Site title ───────────────────────────────── */
         .site-title {
             text-align: center; padding: 12px 16px 20px;
             position: relative; z-index: 1;
@@ -580,7 +759,6 @@
         }
         .site-title h1 span { color: var(--primary); }
 
-        /* ── Nav ──────────────────────────────────────── */
         .nav-wrap {
             display: flex; justify-content: center;
             padding: 0 16px; position: relative; z-index: 1;
@@ -612,7 +790,6 @@
             border: 1px solid var(--hairline);
         }
 
-        /* ── Login area below nav ─────────────────────── */
         .login-area-below {
             display: flex; justify-content: center;
             padding: 14px 16px 0; position: relative; z-index: 1;
@@ -626,7 +803,6 @@
         }
         .btn-login:hover { background: var(--primary-deep); }
 
-        /* ── Progress banner ──────────────────────────── */
         .progress-banner {
             width: calc(100% - 32px); max-width: var(--max-w);
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-soft) 100%);
@@ -640,11 +816,9 @@
         .progress-track { background: rgba(255,255,255,0.25); height: 6px; border-radius: 3px; overflow: hidden; }
         .progress-fill { background: white; height: 100%; width: 0%; transition: width 1.2s ease; border-radius: 3px; }
 
-        /* ── Sections ─────────────────────────────────── */
         .content-section { display: none; width: calc(100% - 32px); max-width: var(--max-w); animation: fadeUp 0.25s ease; }
         .content-section.active { display: block; }
 
-        /* ── Card ─────────────────────────────────────── */
         .card {
             background: var(--canvas); border: 1px solid var(--hairline);
             border-radius: var(--radius-lg); box-shadow: var(--shadow-1);
@@ -654,7 +828,6 @@
         .card-divider { height: 1px; background: var(--hairline); }
         .card-title { font-size: 15px; font-weight: 600; color: var(--ink); letter-spacing: -0.2px; margin-bottom: 16px; }
 
-        /* ── Sub nav (tabs) ───────────────────────────── */
         .sub-nav {
             display: flex; gap: 0; border-bottom: 1px solid var(--hairline);
             padding: 0 24px; margin-bottom: 0;
@@ -669,7 +842,7 @@
         .sub-nav button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
         .tab-content { display: none; } .tab-content.active { display: block; }
 
-        /* ── Home ─────────────────────────────────────── */
+        /* Home */
         .dday-row { display: flex; justify-content: space-around; padding: 20px 0; border-bottom: 1px solid var(--hairline); margin-bottom: 20px; }
         .dday-item { text-align: center; }
         .dday-num { font-size: 36px; font-weight: 300; color: var(--primary); letter-spacing: -1px; font-feature-settings: 'tnum'; }
@@ -680,7 +853,7 @@
         .cal-tag { font-size: 12px; font-weight: 500; color: var(--primary); background: var(--primary-subdued); padding: 3px 10px; border-radius: var(--pill); white-space: nowrap; font-feature-settings: 'tnum'; }
         .cal-title { font-size: 14px; color: var(--ink-secondary); }
 
-        /* ── Mileage rank ─────────────────────────────── */
+        /* Mileage rank */
         .rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
         .rank-card {
             background: var(--canvas-soft); border: 1px solid var(--hairline);
@@ -700,7 +873,7 @@
         .rank-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
         .rank-next { font-size: 10px; color: var(--ink-mute); font-feature-settings: 'tnum'; }
 
-        /* ── Guide boxes ──────────────────────────────── */
+        /* Guide */
         .guide-group { margin-bottom: 20px; }
         .guide-label { font-size: 12px; font-weight: 500; color: var(--ink-mute); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.6px; }
         .guide-box { border-left: 3px solid var(--primary); background: var(--primary-subdued); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 12px 16px; }
@@ -708,7 +881,7 @@
         .guide-box.cool { background: #f0f9ff; border-left-color: #38bdf8; }
         .guide-line { font-size: 13px; color: var(--ink-secondary); padding: 2px 0; }
 
-        /* ── Lock notice ──────────────────────────────── */
+        /* Lock notice */
         .lock-notice { text-align: center; padding: 52px 24px; }
         .lock-icon { font-size: 2.5rem; margin-bottom: 14px; }
         .lock-notice h3 { font-size: 17px; font-weight: 500; color: var(--ink); margin-bottom: 8px; letter-spacing: -0.3px; }
@@ -716,14 +889,17 @@
         .btn-lock-login { padding: 10px 28px; background: var(--primary); color: white; border: none; border-radius: var(--pill); font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: background 0.15s; }
         .btn-lock-login:hover { background: var(--primary-deep); }
 
-        /* ── Praise ───────────────────────────────────── */
+        /* Praise */
         .praise-card { background: var(--canvas-soft); border: 1px solid var(--hairline); border-left: 3px solid var(--primary); border-radius: var(--radius-md); padding: 16px; margin-bottom: 10px; }
         .praise-header { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
         .praise-meta { font-size: 12px; color: var(--ink-mute); margin-bottom: 8px; }
         .praise-body { font-size: 14px; color: var(--ink-secondary); margin: 4px 0; }
         .praise-from { font-size: 12px; color: var(--ink-mute); }
 
-        /* ── Study cert ───────────────────────────────── */
+        /* Char count */
+        .char-count { font-size: 12px; color: var(--ink-mute); text-align: right; margin-top: -8px; margin-bottom: 12px; transition: color 0.2s; }
+
+        /* Study cert */
         .upload-area {
             border: 1.5px dashed var(--hairline-input); border-radius: var(--radius-lg);
             background: var(--canvas-soft); min-height: 180px;
@@ -750,7 +926,7 @@
         .cert-result-desc { font-size: 13px; color: var(--ink-mute); margin-bottom: 6px; }
         .cert-result-mileage { font-size: 13px; font-weight: 500; color: var(--study); }
 
-        /* ── Cert history ─────────────────────────────── */
+        /* Cert history */
         .cert-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
         .cert-row:last-child { border-bottom: none; }
         .cert-row.pass { border-left: 3px solid var(--green); padding-left: 12px; }
@@ -764,7 +940,80 @@
         .score-pos { color: var(--green); }
         .score-neg { color: var(--ink-mute); }
 
-        /* ── Common ───────────────────────────────────── */
+        /* 평가 안내 */
+        .notice-header-row {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
+        }
+        .notice-subject-scroll {
+            display: flex; gap: 6px; overflow-x: auto;
+            padding-bottom: 4px; flex-wrap: nowrap;
+            scrollbar-width: none;
+        }
+        .notice-subject-scroll::-webkit-scrollbar { display: none; }
+        .notice-subject-btn {
+            padding: 6px 14px; border: 1px solid var(--hairline);
+            border-radius: var(--pill); background: var(--canvas);
+            font-family: inherit; font-size: 12px; font-weight: 400;
+            color: var(--ink-mute); cursor: pointer; white-space: nowrap;
+            transition: all 0.15s; flex-shrink: 0;
+        }
+        .notice-subject-btn:hover { background: var(--canvas-soft); }
+        .notice-subject-btn.active { background: var(--notice); color: white; border-color: var(--notice); font-weight: 500; }
+        .btn-notice-write {
+            display: none; align-items: center; gap: 6px;
+            padding: 8px 18px; background: var(--notice); color: white;
+            border: none; border-radius: var(--pill);
+            font-family: inherit; font-size: 13px; font-weight: 400;
+            cursor: pointer; white-space: nowrap; transition: background 0.15s;
+            flex-shrink: 0;
+        }
+        .btn-notice-write:hover { background: #b45309; }
+        .notice-card {
+            background: var(--canvas); border: 1px solid var(--hairline);
+            border-left: 3px solid var(--notice);
+            border-radius: var(--radius-md); padding: 16px;
+            margin-bottom: 10px;
+        }
+        .notice-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .notice-subject-tag {
+            font-size: 11px; font-weight: 600;
+            background: var(--notice-bg); color: var(--notice);
+            padding: 3px 10px; border-radius: var(--pill);
+        }
+        .notice-date { font-size: 12px; color: var(--ink-mute); }
+        .notice-title { font-size: 15px; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+        .notice-writer { font-size: 12px; color: var(--ink-mute); margin-bottom: 10px; }
+        .notice-photo {
+            width: 100%; max-height: 320px; object-fit: contain;
+            border-radius: var(--radius-md); border: 1px solid var(--hairline);
+            cursor: zoom-in; margin-bottom: 10px;
+        }
+        .notice-actions { display: flex; gap: 8px; margin-top: 4px; }
+        .btn-notice-edit, .btn-notice-del {
+            padding: 5px 14px; border-radius: var(--pill);
+            font-family: inherit; font-size: 12px; font-weight: 400;
+            cursor: pointer; border: none; transition: all 0.15s;
+        }
+        .btn-notice-edit { background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); }
+        .btn-notice-edit:hover { background: var(--hairline); }
+        .btn-notice-del { background: var(--red-bg); color: var(--red); }
+        .btn-notice-del:hover { background: #fbd5d1; }
+
+        /* Notice upload area */
+        .notice-upload-area {
+            border: 1.5px dashed var(--hairline-input); border-radius: var(--radius-lg);
+            background: var(--canvas-soft); min-height: 140px;
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 14px; cursor: pointer; overflow: hidden;
+            transition: border-color 0.15s;
+        }
+        .notice-upload-area:hover { border-color: var(--notice); }
+        #notice-img-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 16px; }
+        #notice-img-placeholder span { font-size: 13px; color: var(--ink-mute); }
+        #notice-img-preview { display: none; width: 100%; max-height: 240px; object-fit: contain; border-radius: var(--radius-md); }
+
+        /* Common */
         .list-group-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.7px; color: var(--ink-mute); padding: 12px 0 8px; border-bottom: 1px solid var(--hairline); margin-bottom: 8px; }
         .sort-bar { display: flex; gap: 6px; margin-bottom: 16px; }
         .sort-btn { padding: 6px 14px; border: 1px solid var(--hairline); border-radius: var(--pill); background: var(--canvas); font-family: inherit; font-size: 12px; font-weight: 400; color: var(--ink-mute); cursor: pointer; transition: all 0.15s; }
@@ -797,13 +1046,13 @@
 
         .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; }
 
-        /* ── Toast ────────────────────────────────────── */
+        /* Toast */
         .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120px); background: var(--ink); color: white; padding: 12px 22px; border-radius: var(--pill); font-size: 14px; font-weight: 400; z-index: 9999; transition: transform 0.25s cubic-bezier(.22,.68,0,1.2); white-space: nowrap; box-shadow: var(--shadow-2); }
         .toast.show { transform: translateX(-50%) translateY(0); }
         .toast.error { background: #c0392b; }
         .toast.levelup { background: var(--primary); }
 
-        /* ── Modals ───────────────────────────────────── */
+        /* Modals */
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(13,37,61,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
         .modal-overlay.open { display: flex; }
         .modal-box { background: white; border-radius: 20px; padding: 44px 36px; max-width: 380px; width: 92%; box-shadow: var(--shadow-2); text-align: center; }
@@ -815,6 +1064,29 @@
         .btn-confirm:hover { background: var(--primary-deep); }
         .btn-modal-close { width: 100%; padding: 11px; border: 1px solid var(--hairline); border-radius: var(--pill); background: white; color: var(--ink-mute); font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; }
         .force-pw-notice { background: #fff7ed; border: 1px solid #fed7aa; border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; color: #92400e; margin-bottom: 16px; text-align: left; line-height: 1.6; }
+
+        /* Notice form modal */
+        .notice-form-box {
+            background: white; border-radius: 20px; padding: 32px 28px;
+            max-width: 480px; width: 94%; box-shadow: var(--shadow-2);
+            text-align: left; max-height: 90vh; overflow-y: auto;
+        }
+        .notice-form-box h2 { font-size: 18px; font-weight: 500; color: var(--ink); margin-bottom: 20px; letter-spacing: -0.3px; }
+
+        /* Photo modal */
+        .photo-modal-box {
+            background: rgba(0,0,0,0.9); border-radius: var(--radius-lg);
+            max-width: 90vw; max-height: 90vh;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; cursor: zoom-out; position: relative;
+        }
+        .photo-modal-box img { max-width: 100%; max-height: 90vh; object-fit: contain; }
+        .photo-modal-close {
+            position: absolute; top: 12px; right: 12px;
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            border-radius: var(--pill); padding: 6px 14px;
+            font-family: inherit; font-size: 13px; cursor: pointer;
+        }
 
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
 
@@ -870,33 +1142,71 @@
     </div>
 </div>
 
+<!-- Notice form modal -->
+<div id="notice-form-modal" class="modal-overlay">
+    <div class="notice-form-box">
+        <h2 id="notice-form-title-text">새 평가 안내 등록</h2>
+        <input type="text" id="notice-title-input" placeholder="제목 (예: 3단원 수행평가 안내)">
+        <select id="notice-subject-select" style="margin-bottom:14px;">
+            <option value="국어">국어</option>
+            <option value="영어">영어</option>
+            <option value="수학">수학</option>
+            <option value="사회">사회</option>
+            <option value="역사">역사</option>
+            <option value="과학">과학</option>
+            <option value="정보">정보</option>
+            <option value="음악">음악</option>
+            <option value="미술">미술</option>
+            <option value="체육">체육</option>
+            <option value="정기시험">정기시험</option>
+        </select>
+        <div class="notice-upload-area" onclick="document.getElementById('notice-img-input').click()">
+            <div id="notice-img-placeholder">
+                <span style="font-size:1.8rem;">📷</span>
+                <span>사진을 탭하여 첨부 (선택)</span>
+            </div>
+            <img id="notice-img-preview" src="" alt="미리보기">
+        </div>
+        <input type="file" id="notice-img-input" accept="image/*" style="display:none" onchange="window.previewNoticePhoto(this)">
+        <div style="display:flex;gap:10px;margin-top:4px;">
+            <button id="notice-submit-btn" class="btn-main" onclick="window.submitNotice()" style="flex:2;">저장</button>
+            <button class="btn-main" onclick="window.closeNoticeForm()" style="flex:1;background:var(--canvas);color:var(--ink-mute);border:1px solid var(--hairline);">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- Photo modal -->
+<div id="photo-modal" class="modal-overlay" onclick="window.closePhotoModal()">
+    <div class="photo-modal-box">
+        <img id="photo-modal-img" src="" alt="평가 안내 사진">
+        <button class="photo-modal-close" onclick="window.closePhotoModal()">닫기</button>
+    </div>
+</div>
+
 <!-- Hero -->
 <div class="site-hero">
-    <!-- Top bar: user info + logout -->
     <div class="top-bar">
         <span id="nav-user-label" class="user-pill"></span>
         <button class="btn-logout" id="nav-logout-btn" onclick="window.doLogout()">로그아웃</button>
         <button class="btn-pw" id="nav-pw-btn" onclick="window.openPwModal()">🔑 비밀번호 변경</button>
     </div>
 
-    <!-- Title -->
     <div class="site-title">
         <h1>INTO THE <span>306</span> WORLD</h1>
     </div>
 
-    <!-- Nav -->
     <div class="nav-wrap">
         <nav>
             <button class="nav-btn active" onclick="window.showSection('home')" id="btn-home">🏠 홈</button>
             <button class="nav-btn" onclick="window.showSection('mileage')" id="btn-mileage">⭐ 마일리지</button>
             <button class="nav-btn locked" onclick="window.showSection('study')" id="btn-study">📚 스터디 체크</button>
+            <button class="nav-btn" onclick="window.showSection('notice')" id="btn-notice">📋 평가 안내</button>
             <button class="nav-btn locked" onclick="window.showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
             <button class="nav-btn locked" onclick="window.showSection('today')" id="btn-today">✏️ 오늘하루</button>
             <button class="nav-btn" onclick="location.href='admin.html'" id="btn-admin" style="color:var(--primary);">🔧 관리자</button>
         </nav>
     </div>
 
-    <!-- Login btn below nav -->
     <div class="login-area-below" id="login-area-below">
         <button class="btn-login" id="nav-login-btn" onclick="window.openLoginModal()">🔐 로그인</button>
     </div>
@@ -911,7 +1221,7 @@
     <div class="progress-track"><div id="total-bar-fill" class="progress-fill"></div></div>
 </div>
 
-<!-- ── 홈 ── -->
+<!-- 홈 -->
 <section id="home" class="content-section active">
     <div class="card">
         <div class="card-pad">
@@ -925,7 +1235,7 @@
     </div>
 </section>
 
-<!-- ── 마일리지 ── -->
+<!-- 마일리지 -->
 <section id="mileage" class="content-section">
     <div class="card">
         <div class="sub-nav">
@@ -948,7 +1258,7 @@
     </div>
 </section>
 
-<!-- ── 스터디 체크 ── -->
+<!-- 스터디 체크 -->
 <section id="study" class="content-section">
     <div id="study-locked" class="card" style="display:block;">
         <div class="card-pad lock-notice">
@@ -1005,7 +1315,33 @@
     </div>
 </section>
 
-<!-- ── 칭찬감옥 ── -->
+<!-- 평가 안내 -->
+<section id="notice" class="content-section">
+    <div class="card">
+        <div class="card-pad">
+            <div class="notice-header-row">
+                <div class="notice-subject-scroll">
+                    <button class="notice-subject-btn active" onclick="window.selectNoticeSubject(this,'전체')">전체</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'국어')">국어</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'영어')">영어</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'수학')">수학</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'사회')">사회</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'역사')">역사</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'과학')">과학</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'정보')">정보</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'음악')">음악</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'미술')">미술</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'체육')">체육</button>
+                    <button class="notice-subject-btn" onclick="window.selectNoticeSubject(this,'정기시험')">정기시험</button>
+                </div>
+                <button class="btn-notice-write" id="notice-write-btn" onclick="window.openNoticeWrite()">✏️ 글쓰기</button>
+            </div>
+            <div id="notice-list"></div>
+        </div>
+    </div>
+</section>
+
+<!-- 칭찬감옥 -->
 <section id="praise" class="content-section">
     <div id="praise-locked" class="card" style="display:block;">
         <div class="card-pad lock-notice">
@@ -1030,7 +1366,8 @@
                         <select id="p-to"><option value="">칭찬 주인공 선택</option></select>
                         <input type="text" id="p-when" placeholder="📅 언제? (예: 오늘 점심시간, 어제 쉬는 시간)">
                         <input type="text" id="p-where" placeholder="📍 어디서? (예: 급식실, 복도, 교실)">
-                        <textarea id="p-content" rows="3" placeholder="✏️ 무엇을 했나요? 칭찬 내용을 자세히 적어주세요!"></textarea>
+                        <textarea id="p-content" rows="3" placeholder="✏️ 무엇을 했나요? 칭찬 내용을 자세히 적어주세요! (공백 제외 30자 이상)" oninput="window.onPContentInput()"></textarea>
+                        <div class="char-count" id="p-content-count">0/30자 (공백 제외)</div>
                         <button class="btn-main" onclick="window.submitPraise()">제보하기</button>
                     </div>
                 </div>
@@ -1048,7 +1385,7 @@
     </div>
 </section>
 
-<!-- ── 오늘하루 ── -->
+<!-- 오늘하루 -->
 <section id="today" class="content-section">
     <div id="today-locked" class="card" style="display:block;">
         <div class="card-pad lock-notice">
@@ -1073,7 +1410,8 @@
                         <div id="t-submit-area">
                             <div class="user-info-bar">👤 <span id="t-name-display"></span></div>
                             <input type="hidden" id="t-name">
-                            <textarea id="t-content" rows="3" placeholder="오늘의 생각을 기록하세요..."></textarea>
+                            <textarea id="t-content" rows="3" placeholder="오늘의 생각을 기록하세요... (공백 제외 20자 이상)" oninput="window.onTContentInput()"></textarea>
+                            <div class="char-count" id="t-content-count">0/20자 (공백 제외)</div>
                             <button class="btn-main" onclick="window.submitToday()">기록하기</button>
                         </div>
                     </div>
