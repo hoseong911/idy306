@@ -18,10 +18,14 @@
                 window.adminRole = 'teacher';
                 document.getElementById('admin-modal').classList.remove('open');
                 applyRoleUI();
+                document.getElementById('role-badge').innerText = '선생님';
+                document.getElementById('role-badge').style.display = 'inline-flex';
             } else if (encoded === PW_STUDENT) {
                 window.adminRole = 'student';
                 document.getElementById('admin-modal').classList.remove('open');
                 applyRoleUI();
+                document.getElementById('role-badge').innerText = '회장단';
+                document.getElementById('role-badge').style.display = 'inline-flex';
                 window.showToast("회장단 모드로 접속했어요. 일정만 수정 가능해요.");
             } else {
                 document.getElementById('admin-pw-error').style.display = 'block';
@@ -89,12 +93,27 @@
             renderAdminStudents(globalData.students || {});
             renderAdminHome(globalData.calendar || {});
             renderAdminMileage(globalData);
+            renderAdminMileageRanking(globalData);
             renderAdminPraise(globalData.praise || {});
             renderAdminToday(globalData.impression || {});
             renderAdminStudyCert(globalData.studyCert || {});
         });
 
-        // ── 학생 명단 ──────────────────────────────────────────────
+        // ── 레벨 ──────────────────────────────────────────────────
+        function getLevel(score) {
+            let level=1, required=10, accumulated=0;
+            while(score >= accumulated+required){accumulated+=required;level++;required+=10;}
+            return {level, progress:score-accumulated, nextRequired:required};
+        }
+        function getLevelColor(level) {
+            if(level>=10) return '#533afd';
+            if(level>=7)  return '#38BDF8';
+            if(level>=5)  return '#6366F1';
+            if(level>=3)  return '#2DD4BF';
+            return '#94A3B8';
+        }
+
+        // ── 학생 명단 ──────────────────────────────────────────────────
         let editingOriginalNum = null;
 
         window.saveStudent = () => {
@@ -149,13 +168,6 @@
                     </div>
                 </div>`;
             });
-        }
-
-        // ── 레벨 ──────────────────────────────────────────────────
-        function getLevel(score) {
-            let level=1, required=10, accumulated=0;
-            while(score >= accumulated+required){accumulated+=required;level++;required+=10;}
-            return {level, progress:score-accumulated, nextRequired:required};
         }
 
         // ── 스터디 체크 ──────────────────────────────────────────
@@ -215,6 +227,8 @@
             const cur=mS.val()||0, earned=eS.val()||cur;
             await set(ref(db,`class306/mileage/${name}`),cur+certMileage);
             await set(ref(db,`class306/totalEarned/${name}`),earned+certMileage);
+            const todayISO = new Date().toISOString().slice(0,10);
+            await push(ref(db,`class306/mileageLog/${name}`),{reason:'스터디 체크 (수동 승인)',score:certMileage,date:todayISO,time:new Date().toLocaleString('ko-KR')});
             window.showToast(`${name} 수동 승인 완료. +${certMileage}P`);
         };
 
@@ -226,6 +240,8 @@
         };
 
         // ── 홈/캘린더 ─────────────────────────────────────────────
+        let editingCalId = null;
+
         function renderAdminHome(calObj) {
             const list = document.getElementById('adm-cal-list');
             if (!list) return;
@@ -239,19 +255,45 @@
                         <span class="cal-date-tag">${c.date.slice(5)}</span>
                         <span class="row-name">${c.title}</span>
                     </div>
-                    <button class="btn-sm btn-danger" onclick="window.deleteCal('${id}')">삭제</button>
+                    <div class="row-item-actions">
+                        <button class="btn-sm btn-ghost" onclick="window.editCal('${id}','${c.date}','${c.title.replace(/'/g,"\\'")}')">수정</button>
+                        <button class="btn-sm btn-danger" onclick="window.deleteCal('${id}')">삭제</button>
+                    </div>
                 </div>`;
             });
         }
+
+        window.editCal = (id, date, title) => {
+            editingCalId = id;
+            document.getElementById('adm-cal-date').value = date;
+            document.getElementById('adm-cal-title').value = title;
+            document.getElementById('adm-cal-save-btn').innerText = '수정 완료';
+            document.getElementById('adm-cal-cancel-btn').style.display = 'inline-flex';
+            document.getElementById('adm-cal-title').focus();
+        };
+
+        window.cancelCalEdit = () => {
+            editingCalId = null;
+            document.getElementById('adm-cal-date').value = '';
+            document.getElementById('adm-cal-title').value = '';
+            document.getElementById('adm-cal-save-btn').innerText = '추가';
+            document.getElementById('adm-cal-cancel-btn').style.display = 'none';
+        };
 
         window.addCal = () => {
             const date = document.getElementById('adm-cal-date').value;
             const title = document.getElementById('adm-cal-title').value.trim();
             if (!date || !title) return window.showToast("날짜와 제목을 입력하세요.", 'error');
-            push(ref(db,'class306/calendar'), {date, title});
-            document.getElementById('adm-cal-date').value = '';
-            document.getElementById('adm-cal-title').value = '';
-            window.showToast("일정이 등록되었습니다.");
+            if (editingCalId) {
+                update(ref(db,`class306/calendar/${editingCalId}`), {date, title});
+                window.showToast("일정이 수정되었습니다.");
+                window.cancelCalEdit();
+            } else {
+                push(ref(db,'class306/calendar'), {date, title});
+                document.getElementById('adm-cal-date').value = '';
+                document.getElementById('adm-cal-title').value = '';
+                window.showToast("일정이 등록되었습니다.");
+            }
         };
         window.deleteCal = (id) => { if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db,`class306/calendar/${id}`)); };
 
@@ -303,6 +345,77 @@
             }
         }
 
+        // ── 마일리지 랭킹 (관리자) ────────────────────────────────
+        function renderAdminMileageRanking(data) {
+            const container = document.getElementById('adm-mileage-ranking');
+            if(!container) return;
+            const mileageObj = data.mileage||{};
+            const allEarned = data.totalEarned||{};
+            container.innerHTML='';
+            const scores = {};
+            studentList.forEach(s => scores[s.name] = mileageObj[s.name]||0);
+            const sorted = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+            if(sorted.length===0){ container.innerHTML="<p class='empty-msg'>마일리지 데이터가 없습니다.</p>"; return; }
+            sorted.forEach(([name,score],idx)=>{
+                const rank=idx+1;
+                const medal=rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`${rank}`;
+                const earned=allEarned[name]||score;
+                const{level}=getLevel(earned);
+                const lvColor=getLevelColor(level);
+                const sn = name.replace(/'/g,"\\'");
+                container.innerHTML+=`
+                <div class="adm-rank-row" onclick="window.openMileageLog('${sn}')">
+                    <span class="adm-rank-medal">${medal}</span>
+                    <span class="adm-rank-name">${name}</span>
+                    <span class="adm-rank-lv" style="color:${lvColor};border-color:${lvColor};">Lv.${level}</span>
+                    <span class="adm-rank-score">${score}P</span>
+                    <span class="adm-rank-arrow">→ 내역 보기</span>
+                </div>`;
+            });
+        }
+
+        // ── 마일리지 내역 모달 ────────────────────────────────────
+        window.openMileageLog = async (name) => {
+            document.getElementById('log-modal-name').innerText = `${name} 마일리지 내역`;
+            const container = document.getElementById('log-modal-list');
+            container.innerHTML = '<p class="empty-msg">불러오는 중...</p>';
+            document.getElementById('log-modal').classList.add('open');
+            try {
+                const snap = await get(ref(db,`class306/mileageLog/${name}`));
+                const logObj = snap.val()||{};
+                const logs = Object.values(logObj).sort((a,b)=>new Date(b.time)-new Date(a.time));
+                if(logs.length===0){ container.innerHTML="<p class='empty-msg'>아직 적립 내역이 없어요.<br>이 시점부터 내역이 쌓입니다.</p>"; return; }
+                const total = logs.reduce((s,l)=>s+(l.score||0),0);
+                container.innerHTML=`<div class="log-total">누적 적립 합계: <b>${total}P</b></div>`;
+                logs.forEach(l=>{
+                    container.innerHTML+=`
+                    <div class="log-row">
+                        <div class="log-left">
+                            <span class="log-reason">${l.reason}</span>
+                            <span class="log-time">${l.time||l.date}</span>
+                        </div>
+                        <span class="log-score ${(l.score||0)>=0?'score-pos':'score-neg'}">${(l.score||0)>=0?'+':''}${l.score}P</span>
+                    </div>`;
+                });
+            } catch(e){ container.innerHTML="<p class='empty-msg'>불러오기 실패</p>"; }
+        };
+        window.closeMileageLog = () => { document.getElementById('log-modal').classList.remove('open'); };
+
+        // ── 과거 내역 수동 추가 ────────────────────────────────────
+        window.addManualLog = async () => {
+            const nameEl = document.getElementById('manual-log-name');
+            const reasonEl = document.getElementById('manual-log-reason');
+            const scoreEl = document.getElementById('manual-log-score');
+            const dateEl = document.getElementById('manual-log-date');
+            const name = nameEl.value, reason = reasonEl.value.trim(), score = parseInt(scoreEl.value), date = dateEl.value;
+            if(!name||!reason||isNaN(score)||!date) return window.showToast("모든 항목을 입력하세요.", 'error');
+            if(!confirm(`${name}에게 [${reason}] ${score}P를 ${date} 날짜로 기록할까요?`)) return;
+            const time = new Date(date).toLocaleDateString('ko-KR') + ' (수동 입력)';
+            await push(ref(db,`class306/mileageLog/${name}`),{reason,score,date,time});
+            nameEl.value=''; reasonEl.value=''; scoreEl.value=''; dateEl.value='';
+            window.showToast(`${name} 내역 추가 완료!`);
+        };
+
         function getPraiseScore() {
             const r=parseReasons(globalData.config?.reasons||"").find(r=>r.label.includes('칭찬'));
             return r?r.score:1;
@@ -316,14 +429,18 @@
             if (isNaN(score)||score<=0) return window.showToast("점수를 확인하세요.", 'error');
             if (checked.length===0) return window.showToast("학생을 한 명 이상 선택하세요.", 'error');
             if (!confirm(`${checked.join(', ')}에게 [${reason}] ${score}P 적립할까요?`)) return;
+            const todayISO = new Date().toISOString().slice(0,10);
             Promise.all([get(ref(db,'class306/mileage')),get(ref(db,'class306/totalEarned'))]).then(([mS,eS]) => {
                 const cur=mS.val()||{}, earned=eS.val()||{}, mU={}, eU={}, lu=[];
+                const logPromises=[];
                 checked.forEach(name => {
                     const be=earned[name]||cur[name]||0, ae=be+score;
                     mU[name]=(cur[name]||0)+score; eU[name]=ae;
                     if(getLevel(be).level<getLevel(ae).level) lu.push({name,lv:getLevel(ae).level});
+                    logPromises.push(push(ref(db,`class306/mileageLog/${name}`),{reason,score,date:todayISO,time:new Date().toLocaleString('ko-KR')}));
                 });
                 update(ref(db,'class306/mileage'),mU); update(ref(db,'class306/totalEarned'),eU);
+                Promise.all(logPromises);
                 document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb=>cb.checked=false);
                 sel.value=''; scoreEl.value=''; scoreEl.readOnly=false; customEl.style.display='none'; customEl.value='';
                 if(lu.length>0) window.showToast(`레벨업! ${lu.map(l=>`${l.name}(Lv.${l.lv})`).join(', ')}`,'levelup');
@@ -333,16 +450,23 @@
 
         window.doMileageSub = () => {
             const scoreEl=document.getElementById('adm-sub-score'), score=parseInt(scoreEl.value);
+            const reasonEl=document.getElementById('adm-sub-reason'), reason=reasonEl.value.trim()||'차감';
             const checked=[...document.querySelectorAll('#adm-mileage-list .student-check:checked')].map(cb=>cb.value);
             if (isNaN(score)||score<=0) return window.showToast("차감 점수를 입력하세요.", 'error');
             if (checked.length===0) return window.showToast("학생을 선택하세요.", 'error');
             if (!confirm(`${checked.join(', ')}에서 ${score}P 차감할까요?`)) return;
+            const todayISO = new Date().toISOString().slice(0,10);
             get(ref(db,'class306/mileage')).then(snap => {
                 const cur=snap.val()||{}, updates={};
-                checked.forEach(name => updates[name]=Math.max(0,(cur[name]||0)-score));
+                const logPromises=[];
+                checked.forEach(name => {
+                    updates[name]=Math.max(0,(cur[name]||0)-score);
+                    logPromises.push(push(ref(db,`class306/mileageLog/${name}`),{reason:`차감: ${reason}`,score:-score,date:todayISO,time:new Date().toLocaleString('ko-KR')}));
+                });
                 update(ref(db,'class306/mileage'),updates);
+                Promise.all(logPromises);
                 document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb=>cb.checked=false);
-                scoreEl.value=''; window.showToast(`${checked.length}명 -${score}P 차감 완료`);
+                scoreEl.value=''; reasonEl.value=''; window.showToast(`${checked.length}명 -${score}P 차감 완료`);
             });
         };
 
@@ -398,10 +522,13 @@
         window.approvePraise = (id, from, to) => {
             update(ref(db,`class306/praise/${id}`), {approved:true, rejected:false});
             const ps=getPraiseScore(), ts=ps*2;
+            const todayISO = new Date().toISOString().slice(0,10);
             Promise.all([get(ref(db,'class306/mileage')),get(ref(db,'class306/totalEarned'))]).then(([mS,eS]) => {
                 const cur=mS.val()||{}, earned=eS.val()||{};
                 update(ref(db,'class306/mileage'),{[from]:(cur[from]||0)+ps,[to]:(cur[to]||0)+ts});
                 update(ref(db,'class306/totalEarned'),{[from]:(earned[from]||cur[from]||0)+ps,[to]:(earned[to]||cur[to]||0)+ts});
+                push(ref(db,`class306/mileageLog/${from}`),{reason:'칭찬제보',score:ps,date:todayISO,time:new Date().toLocaleString('ko-KR')});
+                push(ref(db,`class306/mileageLog/${to}`),{reason:'칭찬 주인공',score:ts,date:todayISO,time:new Date().toLocaleString('ko-KR')});
                 window.showToast(`승인 완료. ${from}+${ps}P, ${to}+${ts}P`);
             });
         };
@@ -416,10 +543,13 @@
             const ps=getPraiseScore(), ts=ps*2;
             if (!confirm(`삭제 시 ${from}(-${ps}P), ${to}(-${ts}P) 차감됩니다.`)) return;
             remove(ref(db,`class306/praise/${id}`));
+            const todayISO = new Date().toISOString().slice(0,10);
             Promise.all([get(ref(db,'class306/mileage')),get(ref(db,'class306/totalEarned'))]).then(([mS,eS]) => {
                 const cur=mS.val()||{}, earned=eS.val()||{};
                 update(ref(db,'class306/mileage'),{[from]:Math.max(0,(cur[from]||0)-ps),[to]:Math.max(0,(cur[to]||0)-ts)});
                 update(ref(db,'class306/totalEarned'),{[from]:Math.max(0,(earned[from]||0)-ps),[to]:Math.max(0,(earned[to]||0)-ts)});
+                push(ref(db,`class306/mileageLog/${from}`),{reason:'칭찬제보 삭제(차감)',score:-ps,date:todayISO,time:new Date().toLocaleString('ko-KR')});
+                push(ref(db,`class306/mileageLog/${to}`),{reason:'칭찬 주인공 삭제(차감)',score:-ts,date:todayISO,time:new Date().toLocaleString('ko-KR')});
                 window.showToast("삭제 완료. 마일리지 자동 차감되었습니다.");
             });
         };
@@ -454,10 +584,12 @@
         window.deleteTodayWithMileage = (id, name) => {
             if (!confirm(`삭제 시 ${name}(-1P) 차감됩니다.`)) return;
             remove(ref(db,`class306/impression/${id}`));
+            const todayISO = new Date().toISOString().slice(0,10);
             Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]).then(([mS,eS]) => {
                 const cur=mS.val()||0, earned=eS.val()||cur;
                 set(ref(db,`class306/mileage/${name}`),Math.max(0,cur-1));
                 set(ref(db,`class306/totalEarned/${name}`),Math.max(0,earned-1));
+                push(ref(db,`class306/mileageLog/${name}`),{reason:'오늘하루 삭제(차감)',score:-1,date:todayISO,time:new Date().toLocaleString('ko-KR')});
                 window.showToast("삭제 완료. 마일리지 자동 차감되었습니다.");
             });
         };
@@ -483,12 +615,24 @@
             URL.revokeObjectURL(url);
             window.showToast("CSV 파일로 내보냈어요.");
         };
+
+        // 학생 드롭다운 (과거 내역 수동 추가)
+        function populateManualLogDropdown() {
+            const sel = document.getElementById('manual-log-name');
+            if(!sel) return;
+            sel.innerHTML = '<option value="">학생 선택</option>';
+            studentList.forEach(s => sel.innerHTML += `<option value="${s.name}">${s.num}번 ${s.name}</option>`);
+        }
+        // onValue 이후 호출
+        setTimeout(populateManualLogDropdown, 1000);
+        document.addEventListener('DOMContentLoaded', () => {
+            // 재렌더 시 드롭다운도 갱신
+            const orig = renderAdminMileage;
+        });
     </script>
 
     <style>
-        /* ── Stripe Design System ─────────────────────────────── */
         :root {
-            /* Brand */
             --primary: #533afd;
             --primary-deep: #4434d4;
             --primary-press: #2e2b8c;
@@ -499,23 +643,19 @@
             --ink-secondary: #273951;
             --ink-mute: #64748d;
             --on-primary: #ffffff;
-            /* Surface */
             --canvas: #ffffff;
             --canvas-soft: #f6f9fc;
             --canvas-cream: #f5e9d4;
             --hairline: #e3e8ee;
             --hairline-input: #a8c3de;
-            /* Semantic */
             --green: #1a7f5a;
             --green-bg: #e6f6f0;
             --red: #c0392b;
             --red-bg: #fdf0ef;
             --warn: #d97706;
             --warn-bg: #fef3c7;
-            /* Shadow */
             --shadow-1: rgba(0,55,112,0.08) 0 1px 3px;
             --shadow-2: rgba(0,55,112,0.08) 0 8px 24px, rgba(0,55,112,0.04) 0 2px 6px;
-            /* Layout */
             --max-w: 1100px;
             --radius-sm: 6px;
             --radius-md: 8px;
@@ -527,191 +667,101 @@
 
         body {
             font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 15px;
-            font-weight: 300;
-            line-height: 1.6;
-            color: var(--ink);
-            background: var(--canvas-soft);
-            font-feature-settings: "ss01";
-            letter-spacing: 0;
-            min-height: 100vh;
+            font-size: 15px; font-weight: 300; line-height: 1.6;
+            color: var(--ink); background: var(--canvas-soft);
+            font-feature-settings: "ss01"; min-height: 100vh;
         }
 
-        /* ── Gradient Mesh Hero ───────────────────────────────── */
         .mesh-hero {
             background: linear-gradient(135deg,
-                #fef3e2 0%, #fde8c8 8%,
-                #f0e6ff 22%, #d4d0ff 38%,
-                #c7d2ff 52%, #a5b4fc 62%,
-                #fbc8d4 78%, #fda4af 90%, #fecdd3 100%);
-            padding: 0;
-            position: relative;
-            overflow: hidden;
+                #fef3e2 0%, #fde8c8 8%, #f0e6ff 22%, #d4d0ff 38%,
+                #c7d2ff 52%, #a5b4fc 62%, #fbc8d4 78%, #fda4af 90%, #fecdd3 100%);
+            position: relative; overflow: hidden;
         }
         .mesh-hero::before {
-            content: '';
-            position: absolute;
-            inset: 0;
+            content: ''; position: absolute; inset: 0;
             background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(83,58,253,0.12) 0%, transparent 70%),
-                        radial-gradient(ellipse 50% 70% at 80% 30%, rgba(234,34,97,0.10) 0%, transparent 70%),
-                        radial-gradient(ellipse 40% 60% at 55% 80%, rgba(249,107,238,0.08) 0%, transparent 70%);
+                        radial-gradient(ellipse 50% 70% at 80% 30%, rgba(234,34,97,0.10) 0%, transparent 70%);
             pointer-events: none;
         }
 
+        /* ── 헤더: 중앙정렬 ── */
         .top-bar {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center; /* 중앙 정렬 */
             max-width: var(--max-w);
             margin: 0 auto;
             padding: 20px 32px;
             position: relative;
             z-index: 1;
+            gap: 16px;
+        }
+        .top-bar-left {
+            display: flex; align-items: center; gap: 16px;
+        }
+        .top-bar-right {
+            position: absolute; right: 32px; /* 배지는 우측 고정 */
         }
 
-        .top-bar-left { display: flex; align-items: center; gap: 16px; }
-
         .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-            font-weight: 400;
-            color: var(--ink-mute);
-            text-decoration: none;
-            padding: 7px 14px;
-            border: 1px solid var(--hairline);
-            border-radius: var(--radius-pill);
-            background: rgba(255,255,255,0.7);
-            backdrop-filter: blur(8px);
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 14px; font-weight: 400; color: var(--ink-mute);
+            text-decoration: none; padding: 7px 14px;
+            border: 1px solid var(--hairline); border-radius: var(--radius-pill);
+            background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
             transition: all 0.15s;
         }
         .back-link:hover { background: white; color: var(--ink); }
 
-        .wordmark {
-            font-size: 17px;
-            font-weight: 600;
-            color: var(--ink);
-            letter-spacing: -0.3px;
-        }
+        .wordmark { font-size: 17px; font-weight: 600; color: var(--ink); letter-spacing: -0.3px; }
         .wordmark span { color: var(--primary); }
 
         .role-badge {
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--primary-deep);
-            background: var(--primary-subdued);
-            padding: 3px 10px;
-            border-radius: var(--radius-pill);
-            letter-spacing: 0.4px;
-            text-transform: uppercase;
+            font-size: 11px; font-weight: 500; color: var(--primary-deep);
+            background: var(--primary-subdued); padding: 3px 10px;
+            border-radius: var(--radius-pill); letter-spacing: 0.4px;
+            text-transform: uppercase; display: none;
         }
 
-        /* ── Tab Navigation ───────────────────────────────────── */
         .tab-nav-wrap {
-            max-width: var(--max-w);
-            margin: 0 auto;
-            padding: 0 32px;
-            position: relative;
-            z-index: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            max-width: var(--max-w); margin: 0 auto; padding: 0 32px;
+            position: relative; z-index: 1;
+            display: flex; flex-direction: column; align-items: center;
         }
 
         .adm-tab-nav {
-            display: flex;
-            gap: 2px;
-            background: rgba(255,255,255,0.55);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.6);
-            border-radius: var(--radius-lg);
-            padding: 6px;
-            width: fit-content;
-            margin-bottom: 0;
+            display: flex; gap: 2px;
+            background: rgba(255,255,255,0.55); backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.6); border-radius: var(--radius-lg);
+            padding: 6px; width: fit-content; margin-bottom: 0;
             box-shadow: var(--shadow-1);
         }
 
         .adm-tab-btn {
-            padding: 9px 20px;
-            border: none;
-            border-radius: var(--radius-md);
-            background: transparent;
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 400;
-            color: var(--ink-secondary);
-            cursor: pointer;
-            transition: all 0.15s;
-            white-space: nowrap;
-            letter-spacing: -0.1px;
+            padding: 9px 20px; border: none; border-radius: var(--radius-md);
+            background: transparent; font-family: inherit; font-size: 14px; font-weight: 400;
+            color: var(--ink-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap;
         }
         .adm-tab-btn:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
-        .adm-tab-btn.active {
-            background: white;
-            color: var(--ink);
-            font-weight: 500;
-            box-shadow: var(--shadow-1);
-        }
+        .adm-tab-btn.active { background: white; color: var(--ink); font-weight: 500; box-shadow: var(--shadow-1); }
 
         .hero-pad { padding-bottom: 32px; }
 
-        /* ── Page Body ────────────────────────────────────────── */
-        .page-body {
-            max-width: var(--max-w);
-            margin: 0 auto;
-            padding: 32px 32px 64px;
-        }
+        .page-body { max-width: var(--max-w); margin: 0 auto; padding: 32px 32px 64px; }
 
-        /* ── Tab Content ──────────────────────────────────────── */
         .adm-tab-content { display: none; }
         .adm-tab-content.active { display: block; }
 
-        /* ── Card ─────────────────────────────────────────────── */
-        .card {
-            background: var(--canvas);
-            border: 1px solid var(--hairline);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-1);
-            margin-bottom: 20px;
-            overflow: hidden;
-        }
-        .card-header {
-            padding: 20px 28px;
-            border-bottom: 1px solid var(--hairline);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-        }
-        .card-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--ink);
-            letter-spacing: -0.2px;
-        }
+        .card { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); margin-bottom: 20px; overflow: hidden; }
+        .card-header { padding: 20px 28px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .card-title { font-size: 15px; font-weight: 600; color: var(--ink); letter-spacing: -0.2px; }
         .card-body { padding: 24px 28px; }
         .card-body + .card-body { border-top: 1px solid var(--hairline); }
 
-        /* ── Section Label (내부 구분) ────────────────────────── */
-        .section-label {
-            font-size: 11px;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--ink-mute);
-            margin-bottom: 14px;
-        }
+        .section-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--ink-mute); margin-bottom: 14px; }
 
-        /* ── Row Item ─────────────────────────────────────────── */
-        .row-item {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 16px;
-            padding: 14px 0;
-            border-bottom: 1px solid var(--hairline);
-        }
+        .row-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--hairline); }
         .row-item:last-child { border-bottom: none; }
         .row-item-muted { opacity: 0.6; }
         .row-item-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
@@ -722,46 +772,16 @@
         .row-subject { font-size: 13px; color: var(--primary); font-weight: 500; }
         .row-question { font-size: 12px; color: var(--ink-mute); font-style: italic; }
 
-        /* ── Badges ───────────────────────────────────────────── */
-        .num-badge {
-            display: inline-flex; align-items: center; justify-content: center;
-            width: 32px; height: 32px;
-            font-size: 13px; font-weight: 600;
-            color: var(--ink-secondary);
-            background: var(--canvas-soft);
-            border: 1px solid var(--hairline);
-            border-radius: var(--radius-md);
-            flex-shrink: 0;
-            font-feature-settings: 'tnum';
-        }
-        .cal-date-tag {
-            font-size: 13px; font-weight: 600;
-            color: var(--primary);
-            background: var(--primary-subdued);
-            padding: 3px 10px;
-            border-radius: var(--radius-pill);
-            white-space: nowrap;
-            font-feature-settings: 'tnum';
-        }
-        .status-badge {
-            font-size: 11px; font-weight: 500;
-            padding: 2px 8px;
-            border-radius: var(--radius-pill);
-        }
+        .num-badge { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; font-size: 13px; font-weight: 600; color: var(--ink-secondary); background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: var(--radius-md); flex-shrink: 0; font-feature-settings: 'tnum'; }
+        .cal-date-tag { font-size: 13px; font-weight: 600; color: var(--primary); background: var(--primary-subdued); padding: 3px 10px; border-radius: var(--radius-pill); white-space: nowrap; font-feature-settings: 'tnum'; }
+        .status-badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-pill); }
         .badge-pass { background: var(--green-bg); color: var(--green); }
         .badge-fail { background: var(--red-bg); color: var(--red); }
-        .badge-warn { background: var(--warn-bg); color: var(--warn); }
 
-        .score-pill {
-            font-size: 13px; font-weight: 600;
-            padding: 2px 10px;
-            border-radius: var(--radius-pill);
-            font-feature-settings: 'tnum';
-        }
+        .score-pill { font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: var(--radius-pill); font-feature-settings: 'tnum'; }
         .score-pos { background: var(--green-bg); color: var(--green); }
         .score-neg { background: var(--canvas-soft); color: var(--ink-mute); }
 
-        /* ── Stats Row ────────────────────────────────────────── */
         .stats-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .stat-item { font-size: 14px; color: var(--ink-mute); }
         .stat-sep { color: var(--hairline); font-size: 14px; }
@@ -769,264 +789,116 @@
         .c-red { color: var(--red); }
         .c-indigo { color: var(--primary); }
 
-        /* ── Date Group ───────────────────────────────────────── */
-        .date-group-header {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--ink-mute);
-            padding: 16px 0 8px;
-            border-bottom: 1px solid var(--hairline);
-            margin-bottom: 2px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            letter-spacing: 0.2px;
-        }
-        .date-group-count {
-            font-weight: 400;
-            color: var(--ink-mute);
-            font-size: 12px;
-        }
+        .date-group-header { font-size: 12px; font-weight: 600; color: var(--ink-mute); padding: 16px 0 8px; border-bottom: 1px solid var(--hairline); margin-bottom: 2px; display: flex; align-items: center; gap: 8px; }
+        .date-group-count { font-weight: 400; color: var(--ink-mute); font-size: 12px; }
 
-        /* ── Buttons ──────────────────────────────────────────── */
-        .btn-primary {
-            display: inline-flex; align-items: center; justify-content: center;
-            padding: 8px 16px;
-            background: var(--primary);
-            color: var(--on-primary);
-            border: none;
-            border-radius: var(--radius-pill);
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 400;
-            cursor: pointer;
-            transition: background 0.15s;
-            white-space: nowrap;
-        }
+        /* Buttons */
+        .btn-primary { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; background: var(--primary); color: var(--on-primary); border: none; border-radius: var(--radius-pill); font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
         .btn-primary:hover { background: var(--primary-deep); }
-        .btn-primary:active { background: var(--primary-press); }
-
-        .btn-secondary {
-            display: inline-flex; align-items: center; justify-content: center;
-            padding: 8px 16px;
-            background: var(--canvas);
-            color: var(--primary);
-            border: 1px solid var(--primary);
-            border-radius: var(--radius-pill);
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 400;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
+        .btn-secondary { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; background: var(--canvas); color: var(--primary); border: 1px solid var(--primary); border-radius: var(--radius-pill); font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: all 0.15s; }
         .btn-secondary:hover { background: var(--primary-subdued); }
-
-        .btn-sm {
-            display: inline-flex; align-items: center; justify-content: center;
-            padding: 6px 12px;
-            border-radius: var(--radius-pill);
-            font-family: inherit;
-            font-size: 13px;
-            font-weight: 400;
-            cursor: pointer;
-            border: none;
-            white-space: nowrap;
-            transition: all 0.15s;
-            text-decoration: none;
-        }
+        .btn-sm { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: var(--radius-pill); font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; border: none; white-space: nowrap; transition: all 0.15s; text-decoration: none; }
         .btn-sm.btn-primary { background: var(--primary); color: white; }
         .btn-sm.btn-primary:hover { background: var(--primary-deep); }
-        .btn-sm.btn-ghost {
-            background: var(--canvas-soft);
-            color: var(--ink-secondary);
-            border: 1px solid var(--hairline);
-        }
+        .btn-sm.btn-ghost { background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); }
         .btn-sm.btn-ghost:hover { background: var(--hairline); }
         .btn-sm.btn-danger { background: var(--red-bg); color: var(--red); }
         .btn-sm.btn-danger:hover { background: #fbd5d1; }
         .btn-sm.btn-warn { background: var(--warn-bg); color: var(--warn); }
-        .btn-sm.btn-warn:hover { background: #fde68a; }
-
-        .btn-full {
-            width: 100%;
-            padding: 11px 20px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: var(--radius-pill);
-            font-family: inherit;
-            font-size: 15px;
-            font-weight: 400;
-            cursor: pointer;
-            transition: background 0.15s;
-        }
+        .btn-full { width: 100%; padding: 11px 20px; background: var(--primary); color: white; border: none; border-radius: var(--radius-pill); font-family: inherit; font-size: 15px; font-weight: 400; cursor: pointer; transition: background 0.15s; }
         .btn-full:hover { background: var(--primary-deep); }
-        .btn-full.btn-full-ghost {
-            background: var(--canvas);
-            color: var(--ink-secondary);
-            border: 1px solid var(--hairline);
-        }
-        .btn-full.btn-full-ghost:hover { background: var(--canvas-soft); }
+        .btn-full.btn-full-ghost { background: var(--canvas); color: var(--ink-secondary); border: 1px solid var(--hairline); }
         .btn-full.btn-danger-full { background: var(--red-bg); color: var(--red); border: 1px solid #fbd5d1; }
 
-        /* ── Forms ────────────────────────────────────────────── */
+        /* Forms */
         .form-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 16px; }
-        .form-group { display: flex; flex-direction: column; gap: 6px; }
-        .form-label { font-size: 12px; font-weight: 500; color: var(--ink-mute); }
-
-        input[type="text"], input[type="number"], input[type="date"],
-        input[type="password"], textarea, select {
-            width: 100%;
-            padding: 10px 14px;
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 400;
-            color: var(--ink);
-            background: var(--canvas);
-            border: 1px solid var(--hairline-input);
-            border-radius: var(--radius-sm);
-            outline: none;
-            transition: border-color 0.15s;
-            margin-bottom: 10px;
+        input[type="text"], input[type="number"], input[type="date"], input[type="password"], textarea, select {
+            width: 100%; padding: 10px 14px; font-family: inherit; font-size: 14px; font-weight: 400;
+            color: var(--ink); background: var(--canvas); border: 1px solid var(--hairline-input);
+            border-radius: var(--radius-sm); outline: none; transition: border-color 0.15s; margin-bottom: 10px;
         }
         input:focus, textarea:focus, select:focus { border-color: var(--primary); }
         input[type="number"] { -moz-appearance: textfield; }
-        input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
         textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
 
-        /* ── Mileage Grid ─────────────────────────────────────── */
-        .student-check-list {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-            max-height: 280px;
-            overflow-y: auto;
-            margin-bottom: 16px;
-            padding: 2px;
-        }
-        .adm-mileage-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 9px 12px;
-            background: var(--canvas-soft);
-            border: 1px solid transparent;
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            transition: all 0.12s;
-        }
-        .adm-mileage-item:has(.student-check:checked) {
-            border-color: var(--primary);
-            background: var(--primary-subdued);
-        }
+        /* Mileage grid */
+        .student-check-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 280px; overflow-y: auto; margin-bottom: 16px; padding: 2px; }
+        .adm-mileage-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--canvas-soft); border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer; transition: all 0.12s; }
+        .adm-mileage-item:has(.student-check:checked) { border-color: var(--primary); background: var(--primary-subdued); }
         .adm-mileage-item input[type="checkbox"] { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; }
         .adm-m-name { flex: 1; font-size: 13px; font-weight: 400; color: var(--ink); cursor: pointer; }
         .adm-m-score { font-size: 12px; font-weight: 500; color: var(--ink-mute); font-feature-settings: 'tnum'; }
-
         .select-all-row { display: flex; gap: 8px; margin-bottom: 12px; }
         .btn-sel { padding: 6px 14px; border-radius: var(--radius-pill); border: 1px solid var(--hairline); background: var(--canvas); font-size: 13px; font-weight: 400; cursor: pointer; color: var(--ink-mute); font-family: inherit; }
         .btn-sel:hover { background: var(--canvas-soft); color: var(--ink); }
-
-        /* ── Action Bar ───────────────────────────────────────── */
-        .action-bar {
-            display: flex;
-            gap: 10px;
-            align-items: stretch;
-            margin-top: 16px;
-        }
+        .action-bar { display: flex; gap: 10px; align-items: stretch; margin-top: 16px; }
         .action-bar .btn-full { flex: 2; }
         .deduct-group { flex: 1; display: flex; flex-direction: column; gap: 6px; }
         .deduct-group input { margin-bottom: 0; }
 
-        /* ── Info Box ─────────────────────────────────────────── */
-        .info-box {
-            background: var(--primary-subdued);
-            border: 1px solid #d4d0ff;
-            border-radius: var(--radius-md);
-            padding: 14px 18px;
-            font-size: 14px;
-            color: var(--primary-deep);
-            line-height: 1.7;
-            margin-bottom: 16px;
+        /* 마일리지 랭킹 (관리자) */
+        .adm-rank-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px; border-radius: var(--radius-md);
+            background: var(--canvas-soft); border: 1px solid var(--hairline);
+            margin-bottom: 6px; cursor: pointer; transition: all 0.15s;
         }
-        .info-box b { color: var(--brand-dark); }
+        .adm-rank-row:hover { background: var(--primary-subdued); border-color: var(--primary); }
+        .adm-rank-medal { font-size: 18px; flex-shrink: 0; }
+        .adm-rank-name { flex: 1; font-size: 14px; font-weight: 500; color: var(--ink); }
+        .adm-rank-lv { font-size: 11px; font-weight: 500; border: 1.5px solid; border-radius: var(--radius-pill); padding: 2px 8px; }
+        .adm-rank-score { font-size: 14px; font-weight: 500; color: var(--primary); font-feature-settings: 'tnum'; }
+        .adm-rank-arrow { font-size: 12px; color: var(--ink-mute); flex-shrink: 0; }
+
+        /* 마일리지 로그 모달 */
+        .log-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(13,37,61,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
+        .log-modal-overlay.open { display: flex; }
+        .log-modal-box { background: white; border-radius: 16px; padding: 0; max-width: 480px; width: 94%; max-height: 80vh; box-shadow: var(--shadow-2); display: flex; flex-direction: column; overflow: hidden; }
+        .log-modal-header { padding: 20px 24px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; }
+        .log-modal-title { font-size: 16px; font-weight: 600; color: var(--ink); letter-spacing: -0.2px; }
+        .log-modal-body { padding: 16px 24px; overflow-y: auto; flex: 1; }
+        .log-total { font-size: 13px; font-weight: 500; color: var(--primary); background: var(--primary-subdued); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; }
+        .log-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+        .log-row:last-child { border-bottom: none; }
+        .log-left { display: flex; flex-direction: column; gap: 2px; }
+        .log-reason { font-size: 14px; font-weight: 400; color: var(--ink); }
+        .log-time { font-size: 12px; color: var(--ink-mute); }
+        .log-score { font-size: 14px; font-weight: 600; white-space: nowrap; font-feature-settings: 'tnum'; }
+
+        /* Info box */
+        .info-box { background: var(--primary-subdued); border: 1px solid #d4d0ff; border-radius: var(--radius-md); padding: 14px 18px; font-size: 14px; color: var(--primary-deep); line-height: 1.7; margin-bottom: 16px; }
         .info-box a { color: var(--primary); font-weight: 500; }
         .info-box code { background: #d4d0ff; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+        .auto-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--green); background: var(--green-bg); padding: 3px 10px; border-radius: var(--radius-pill); }
 
-        .auto-tag {
-            display: inline-flex; align-items: center; gap: 5px;
-            font-size: 12px; font-weight: 500;
-            color: var(--green);
-            background: var(--green-bg);
-            padding: 3px 10px;
-            border-radius: var(--radius-pill);
-        }
-
-        /* ── Toast ────────────────────────────────────────────── */
-        .toast {
-            position: fixed; bottom: 28px; left: 50%;
-            transform: translateX(-50%) translateY(120px);
-            background: var(--ink);
-            color: white;
-            padding: 12px 24px;
-            border-radius: var(--radius-pill);
-            font-size: 14px; font-weight: 400;
-            z-index: 9999;
-            transition: transform 0.25s cubic-bezier(.22,.68,0,1.2);
-            white-space: nowrap;
-            box-shadow: var(--shadow-2);
-        }
+        /* Toast */
+        .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(120px); background: var(--ink); color: white; padding: 12px 24px; border-radius: var(--radius-pill); font-size: 14px; font-weight: 400; z-index: 9999; transition: transform 0.25s cubic-bezier(.22,.68,0,1.2); white-space: nowrap; box-shadow: var(--shadow-2); }
         .toast.show { transform: translateX(-50%) translateY(0); }
         .toast.error { background: #c0392b; }
         .toast.levelup { background: var(--primary); }
 
-        /* ── Modal ────────────────────────────────────────────── */
-        .modal-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(13,37,61,0.5);
-            z-index: 1000;
-            align-items: center; justify-content: center;
-            backdrop-filter: blur(6px);
-        }
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(13,37,61,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
         .modal-overlay.open { display: flex; }
-        .modal-box {
-            background: white;
-            border-radius: 16px;
-            padding: 48px 40px;
-            max-width: 400px; width: 90%;
-            box-shadow: var(--shadow-2);
-            text-align: center;
-        }
+        .modal-box { background: white; border-radius: 16px; padding: 48px 40px; max-width: 400px; width: 90%; box-shadow: var(--shadow-2); text-align: center; }
         .modal-icon { font-size: 2.5rem; margin-bottom: 16px; }
         .modal-title { font-size: 22px; font-weight: 300; letter-spacing: -0.5px; color: var(--ink); margin-bottom: 6px; }
         .modal-sub { font-size: 14px; color: var(--ink-mute); margin-bottom: 28px; line-height: 1.6; }
-        .modal-pw-input {
-            width: 100%; padding: 14px 18px;
-            font-size: 20px; text-align: center; letter-spacing: 6px;
-            border: 1px solid var(--hairline-input); border-radius: var(--radius-sm);
-            background: white; outline: none; margin-bottom: 14px;
-            font-family: inherit;
-        }
+        .modal-pw-input { width: 100%; padding: 14px 18px; font-size: 20px; text-align: center; letter-spacing: 6px; border: 1px solid var(--hairline-input); border-radius: var(--radius-sm); background: white; outline: none; margin-bottom: 14px; font-family: inherit; }
         .modal-pw-input:focus { border-color: var(--primary); }
-        .modal-error {
-            color: var(--red); font-size: 13px;
-            margin-bottom: 14px; display: none;
-            background: var(--red-bg); padding: 8px 14px;
-            border-radius: var(--radius-md);
-        }
+        .modal-error { color: var(--red); font-size: 13px; margin-bottom: 14px; display: none; background: var(--red-bg); padding: 8px 14px; border-radius: var(--radius-md); }
 
-        /* ── Misc ─────────────────────────────────────────────── */
-        .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; }
+        .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; line-height: 1.7; }
         .note-text { text-align: center; font-size: 12px; color: var(--ink-mute); padding: 8px 0; }
         .divider { height: 1px; background: var(--hairline); margin: 20px 0; }
 
         @keyframes shake { 0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)} }
         .shake { animation: shake 0.35s ease; }
 
-        /* ── Responsive ───────────────────────────────────────── */
         @media (max-width: 768px) {
             .top-bar { padding: 16px 20px; }
+            .top-bar-right { right: 20px; }
             .tab-nav-wrap { padding: 0 16px; }
             .adm-tab-nav { width: 100%; overflow-x: auto; }
             .adm-tab-btn { padding: 8px 14px; font-size: 13px; }
@@ -1039,7 +911,7 @@
 </head>
 <body>
 
-<!-- Modal -->
+<!-- Admin password modal -->
 <div id="admin-modal" class="modal-overlay open">
     <div class="modal-box">
         <div class="modal-icon">🔐</div>
@@ -1048,6 +920,17 @@
         <input type="password" id="admin-pw-input" class="modal-pw-input" placeholder="••••••">
         <div id="admin-pw-error" class="modal-error">비밀번호가 틀렸습니다.</div>
         <button class="btn-full" onclick="window.tryAdminLogin()">접속</button>
+    </div>
+</div>
+
+<!-- Mileage log modal -->
+<div id="log-modal" class="log-modal-overlay">
+    <div class="log-modal-box">
+        <div class="log-modal-header">
+            <span class="log-modal-title" id="log-modal-name">마일리지 내역</span>
+            <button class="btn-sm btn-ghost" onclick="window.closeMileageLog()">닫기</button>
+        </div>
+        <div class="log-modal-body" id="log-modal-list"></div>
     </div>
 </div>
 
@@ -1060,7 +943,9 @@
             <a href="index.html" class="back-link">← 대시보드</a>
             <div class="wordmark">306 <span>WORLD</span> <span style="color:var(--ink-mute);font-weight:300;">관리자</span></div>
         </div>
-        <span class="role-badge" id="role-badge" style="display:none;">선생님</span>
+        <div class="top-bar-right">
+            <span class="role-badge" id="role-badge"></span>
+        </div>
     </div>
 
     <div class="tab-nav-wrap hero-pad">
@@ -1075,20 +960,18 @@
     </div>
 </div>
 
-<!-- Page Body -->
 <div class="page-body">
 
     <!-- 1. 홈/일정 -->
     <div id="adm-home" class="adm-tab-content active">
         <div class="card">
-            <div class="card-header">
-                <span class="card-title">📅 일정 등록</span>
-            </div>
+            <div class="card-header"><span class="card-title">📅 일정 등록 / 수정</span></div>
             <div class="card-body">
                 <div class="form-row">
                     <input type="date" id="adm-cal-date" style="margin-bottom:0;flex:1;">
                     <input type="text" id="adm-cal-title" placeholder="일정 제목" style="margin-bottom:0;flex:2;">
-                    <button class="btn-primary" onclick="window.addCal()" style="flex-shrink:0;">추가</button>
+                    <button id="adm-cal-save-btn" class="btn-primary" onclick="window.addCal()" style="flex-shrink:0;">추가</button>
+                    <button id="adm-cal-cancel-btn" class="btn-sm btn-ghost" onclick="window.cancelCalEdit()" style="display:none;flex-shrink:0;">취소</button>
                 </div>
             </div>
             <div class="card-body">
@@ -1100,42 +983,63 @@
 
     <!-- 2. 마일리지 -->
     <div id="adm-mileage" class="adm-tab-content">
-        <div>
-            <div>
-                <div class="card">
-                    <div class="card-header"><span class="card-title">⚙️ 적립 설정</span></div>
-                    <div class="card-body">
-                        <p class="section-label">적립 방법 <span style="font-weight:300;text-transform:none;">(사유: +점수P 형식)</span></p>
-                        <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;스터디 체크: +3P"></textarea>
-                        <p class="section-label">개인 보상</p>
-                        <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
-                        <p class="section-label">단체 보상</p>
-                        <textarea id="adm-group-rewards-input" rows="2" placeholder="3,000P: 학급 파티"></textarea>
-                        <button class="btn-full" onclick="window.saveConfig()">설정 저장</button>
-                    </div>
-                </div>
+
+        <!-- 랭킹 -->
+        <div class="card">
+            <div class="card-header"><span class="card-title">🏆 마일리지 랭킹</span><span style="font-size:13px;color:var(--ink-mute);">이름을 클릭하면 내역을 볼 수 있어요</span></div>
+            <div class="card-body">
+                <div id="adm-mileage-ranking"></div>
             </div>
-            <div>
-                <div class="card">
-                    <div class="card-header"><span class="card-title">💰 마일리지 적립 / 차감</span></div>
-                    <div class="card-body">
-                        <select id="adm-reason-select" onchange="window.onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')">
-                            <option value="">적립 사유 선택</option>
-                        </select>
-                        <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
-                        <input type="number" id="adm-add-score" placeholder="점수 (P)">
-                        <div class="select-all-row">
-                            <button class="btn-sel" onclick="window.toggleAllStudents('all')">전체 선택</button>
-                            <button class="btn-sel" onclick="window.toggleAllStudents('none')">전체 해제</button>
-                        </div>
-                        <div id="adm-mileage-list" class="student-check-list"></div>
-                        <div class="action-bar">
-                            <button class="btn-full" onclick="window.doMileageAdd()">적립</button>
-                            <div class="deduct-group">
-                                <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0;">
-                                <button class="btn-full btn-danger-full" onclick="window.doMileageSub()">차감</button>
-                            </div>
-                        </div>
+        </div>
+
+        <!-- 과거 내역 수동 추가 -->
+        <div class="card">
+            <div class="card-header"><span class="card-title">📝 과거 내역 수동 추가</span></div>
+            <div class="card-body">
+                <div class="form-row" style="flex-wrap:wrap;gap:8px;">
+                    <select id="manual-log-name" style="margin-bottom:0;flex:1;min-width:120px;"><option value="">학생 선택</option></select>
+                    <input type="text" id="manual-log-reason" placeholder="사유 (예: 칭찬제보)" style="margin-bottom:0;flex:2;min-width:120px;">
+                    <input type="number" id="manual-log-score" placeholder="점수" style="margin-bottom:0;width:80px;flex-shrink:0;">
+                    <input type="date" id="manual-log-date" style="margin-bottom:0;flex:1;min-width:120px;">
+                    <button class="btn-primary" onclick="window.addManualLog()" style="flex-shrink:0;">추가</button>
+                </div>
+                <p style="font-size:12px;color:var(--ink-mute);margin-top:4px;">※ 이 기능은 마일리지 실제 점수는 변경하지 않고 내역 로그만 추가합니다. 점수 적립은 아래 적립/차감을 이용하세요.</p>
+            </div>
+        </div>
+
+        <!-- 적립/차감 -->
+        <div class="card">
+            <div class="card-header"><span class="card-title">⚙️ 적립 설정</span></div>
+            <div class="card-body">
+                <p class="section-label">적립 방법 <span style="font-weight:300;text-transform:none;">(사유: +점수P 형식)</span></p>
+                <textarea id="adm-reasons-input" rows="4" placeholder="칭찬제보: +1P&#10;오늘하루: +1P&#10;스터디 체크: +3P"></textarea>
+                <p class="section-label">개인 보상</p>
+                <textarea id="adm-personal-rewards-input" rows="3" placeholder="5P: 까까&#10;100P: 자리지정"></textarea>
+                <p class="section-label">단체 보상</p>
+                <textarea id="adm-group-rewards-input" rows="2" placeholder="3,000P: 학급 파티"></textarea>
+                <button class="btn-full" onclick="window.saveConfig()">설정 저장</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title">💰 마일리지 적립 / 차감</span></div>
+            <div class="card-body">
+                <select id="adm-reason-select" onchange="window.onReasonChange('adm-reason-select','adm-add-score','adm-reason-custom')">
+                    <option value="">적립 사유 선택</option>
+                </select>
+                <input type="text" id="adm-reason-custom" placeholder="사유 직접 입력" style="display:none;">
+                <input type="number" id="adm-add-score" placeholder="점수 (P)">
+                <div class="select-all-row">
+                    <button class="btn-sel" onclick="window.toggleAllStudents('all')">전체 선택</button>
+                    <button class="btn-sel" onclick="window.toggleAllStudents('none')">전체 해제</button>
+                </div>
+                <div id="adm-mileage-list" class="student-check-list"></div>
+                <div class="action-bar">
+                    <button class="btn-full" onclick="window.doMileageAdd()">적립</button>
+                    <div class="deduct-group">
+                        <input type="number" id="adm-sub-score" placeholder="차감 점수" style="margin-bottom:0;">
+                        <input type="text" id="adm-sub-reason" placeholder="차감 사유" style="margin-bottom:0;">
+                        <button class="btn-full btn-danger-full" onclick="window.doMileageSub()">차감</button>
                     </div>
                 </div>
             </div>
@@ -1230,21 +1134,6 @@
         </div>
     </div>
 
-</div><!-- /.page-body -->
-
-<script>
-    // role badge 업데이트
-    const origApply = window.applyRoleUI || (() => {});
-    // show role badge after login
-    const _origTry = window.tryAdminLogin;
-    window.tryAdminLogin = function() {
-        _origTry();
-        const badge = document.getElementById('role-badge');
-        if (badge && window.adminRole) {
-            badge.innerText = window.adminRole === 'teacher' ? '선생님' : '회장단';
-            badge.style.display = 'inline-flex';
-        }
-    };
-</script>
+</div>
 </body>
 </html>
