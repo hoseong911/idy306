@@ -236,9 +236,9 @@
             errEl.style.display = 'none';
             if (!rawNum || !nameVal || !pwVal) { errEl.innerText="모든 항목을 입력해주세요."; errEl.style.display='block'; return; }
             if (rawNum==='00000' && nameVal==='호성' && pwVal==='0000') {
-                saveSession({num:0, name:'호성(테스트)', isTest:true}, autoLogin);
+                saveSession({num:0, name:'호성쌤', isTest:true}, autoLogin);
                 updateNavUI(); updateDropdownsForUser(); window.closeLoginModal();
-                window.showToast("🧪 테스트 모드로 접속했어요!", 'levelup');
+                window.showToast("안녕하세요, 호성쌤! 👋", 'levelup');
                 if (pendingSection) { window.showSection(pendingSection); pendingSection=null; }
                 return;
             }
@@ -460,17 +460,22 @@
             const approved=Object.entries(praiseObj).filter(([,p])=>p.approved);
             if(approved.length===0) return container.innerHTML="<p class='empty-msg'>아직 승인된 칭찬이 없어요 😊</p>";
             const grouped={};
+            const praiseCard = (id, p) => {
+                const adminBtns = (currentUser && currentUser.isTest)
+                    ? `<div class="admin-card-actions"><button class="btn-admin-edit" onclick="window.openPraiseEdit('${id}')">수정</button><button class="btn-admin-del" onclick="window.deletePraiseItem('${id}')">삭제</button></div>` : '';
+                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div>${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
+            };
             if(sortBy==='date') {
-                approved.forEach(([,p])=>{const d=p.time?p.time.split(' ')[0]:'날짜 미상';if(!grouped[d])grouped[d]=[];grouped[d].push(p);});
+                approved.forEach(([id,p])=>{const d=p.time?p.time.split(' ')[0]:'날짜 미상';if(!grouped[d])grouped[d]=[];grouped[d].push({id,...p});});
                 Object.entries(grouped).reverse().forEach(([date,items])=>{
                     container.innerHTML+=`<div class="list-group-label">📅 ${date}</div>`;
-                    items.forEach(p=>container.innerHTML+=`<div class="praise-card"><div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div>${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small></div>`);
+                    items.forEach(p=>container.innerHTML+=praiseCard(p.id, p));
                 });
             } else {
-                approved.forEach(([,p])=>{if(!grouped[p.to])grouped[p.to]=[];grouped[p.to].push(p);});
+                approved.forEach(([id,p])=>{if(!grouped[p.to])grouped[p.to]=[];grouped[p.to].push({id,...p});});
                 Object.entries(grouped).sort().forEach(([name,items])=>{
                     container.innerHTML+=`<div class="list-group-label">👤 ${name}</div>`;
-                    items.forEach(p=>container.innerHTML+=`<div class="praise-card"><div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div>${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small></div>`);
+                    items.forEach(p=>container.innerHTML+=praiseCard(p.id, p));
                 });
             }
         };
@@ -514,11 +519,15 @@
             const approved=Object.entries(impObj).filter(([,i])=>i.approved);
             if(approved.length===0) return container.innerHTML="<p class='empty-msg'>아직 기록이 없어요 😊</p>";
             const grouped={};
-            approved.forEach(([,i])=>{const key=i.date||'날짜 미상';if(!grouped[key])grouped[key]=[];grouped[key].push(i);});
+            approved.forEach(([id,i])=>{const key=i.date||'날짜 미상';if(!grouped[key])grouped[key]=[];grouped[key].push({id,...i});});
             Object.entries(grouped).reverse().forEach(([date,items])=>{
                 const sorted2=sortBy==='name'?items.sort((a,b)=>a.name.localeCompare(b.name)):items;
                 container.innerHTML+=`<div class="list-group-label">📅 ${date}</div>`;
-                sorted2.forEach(i=>container.innerHTML+=`<div class="today-item"><b>${i.name}</b><span>${i.content}</span></div>`);
+                sorted2.forEach(i=>{
+                    const adminBtns = (currentUser && currentUser.isTest)
+                        ? `<div class="admin-card-actions"><button class="btn-admin-edit" onclick="window.openTodayEdit('${i.id}')">수정</button><button class="btn-admin-del" onclick="window.deleteTodayItem('${i.id}','${i.name}')">삭제</button></div>` : '';
+                    container.innerHTML+=`<div class="today-item"><div class="today-item-content"><b>${i.name}</b><span>${i.content}</span></div>${adminBtns}</div>`;
+                });
             });
         };
 
@@ -531,18 +540,20 @@
             const todayKR=new Date().toLocaleDateString('ko-KR');
             const already=Object.values(globalData.impression||{}).some(i=>i.name===name&&i.date===todayKR);
             if(already) return window.showToast("오늘은 이미 기록했어요! 내일 또 참여해요 😊", 'error');
-            if(currentUser.isTest){document.getElementById('t-content').value='';updateCharCount('t-content','t-content-count',20);return window.showToast("🧪 [테스트] 기록 완료! (실제 저장 안됨) +1P",'levelup');}
             try {
                 await push(ref(db,'class306/impression'),{name,content,question:q,date:todayKR,approved:true,time:new Date().toLocaleString('ko-KR')});
-                const[mSnap,eSnap]=await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
-                const cur=mSnap.val()||0,earned=eSnap.val()||cur,afterEarned=earned+1;
-                await set(ref(db,`class306/mileage/${name}`),cur+1);
-                await set(ref(db,`class306/totalEarned/${name}`),afterEarned);
-                await push(ref(db,`class306/mileageLog/${name}`),{reason:'오늘하루',score:1,date:new Date().toISOString().slice(0,10),time:new Date().toLocaleString('ko-KR')});
-                if(getLevel(earned).level<getLevel(afterEarned).level) setTimeout(()=>window.showToast(`🎉 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),800);
                 document.getElementById('t-content').value='';
                 updateCharCount('t-content','t-content-count',20);
-                window.showToast("기록 완료! +1P 자동 적립 ✅");
+                if(currentUser.isTest){ window.showToast("기록 완료! (선생님 계정 — 마일리지 미적립)"); }
+                else {
+                    const[mSnap,eSnap]=await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
+                    const cur=mSnap.val()||0,earned=eSnap.val()||cur,afterEarned=earned+1;
+                    await set(ref(db,`class306/mileage/${name}`),cur+1);
+                    await set(ref(db,`class306/totalEarned/${name}`),afterEarned);
+                    await push(ref(db,`class306/mileageLog/${name}`),{reason:'오늘하루',score:1,date:new Date().toISOString().slice(0,10),time:new Date().toLocaleString('ko-KR')});
+                    if(getLevel(earned).level<getLevel(afterEarned).level) setTimeout(()=>window.showToast(`🎉 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),800);
+                    window.showToast("기록 완료! +1P 자동 적립 ✅");
+                }
             } catch(e){window.showToast("오류가 발생했어요.",'error');}
         };
 
@@ -592,7 +603,7 @@
                 try{const ext=file.name.split('.').pop()||'jpg',storageRef=sRef(storage,`studyCert/${name}_${Date.now()}.${ext}`);await uploadBytes(storageRef,file);photoURL=await getDownloadURL(storageRef);}catch(e){console.warn("Storage 업로드 실패:",e);}
                 const certData={name,date:todayISO,time:new Date().toLocaleString('ko-KR'),studyContent,result:result.pass?'pass':'fail',reason:result.reason,photoDate:result.photo_date||'없음',emoji:result.emoji,photoURL,mileage:result.pass?CERT_MILEAGE:0};
                 await push(ref(db,'class306/studyCert'),certData);
-                if(result.pass){
+                if(result.pass && !currentUser.isTest){
                     const[mSnap,eSnap]=await Promise.all([get(ref(db,`class306/mileage/${name}`)),get(ref(db,`class306/totalEarned/${name}`))]);
                     const before=mSnap.val()||0,beforeEarned=eSnap.val()||before,afterEarned=beforeEarned+CERT_MILEAGE;
                     await set(ref(db,`class306/mileage/${name}`),before+CERT_MILEAGE);
@@ -758,6 +769,50 @@
             document.getElementById('photo-modal').classList.add('open');
         };
         window.closePhotoModal = () => { document.getElementById('photo-modal').classList.remove('open'); };
+
+        // ── 선생님 전용: 칭찬감옥 수정/삭제 ──────────────────────
+        window.openPraiseEdit = (id) => {
+            const p = Object.entries(globalData.praise||{}).find(([k])=>k===id)?.[1];
+            if(!p) return;
+            document.getElementById('edit-modal-title').innerText = '칭찬 내용 수정';
+            document.getElementById('edit-modal-textarea').value = p.content;
+            document.getElementById('edit-modal-save').onclick = async () => {
+                const newContent = document.getElementById('edit-modal-textarea').value.trim();
+                if(!newContent) return window.showToast("내용을 입력해주세요.", 'error');
+                await update(ref(db,`class306/praise/${id}`), {content: newContent});
+                window.closeEditModal();
+                window.showToast("수정되었습니다.");
+            };
+            document.getElementById('edit-modal').classList.add('open');
+        };
+        window.deletePraiseItem = async (id) => {
+            if(!confirm("이 칭찬 내용을 삭제할까요?")) return;
+            await remove(ref(db,`class306/praise/${id}`));
+            window.showToast("삭제되었습니다.");
+        };
+
+        // ── 선생님 전용: 오늘하루 수정/삭제 ──────────────────────
+        window.openTodayEdit = (id) => {
+            const i = globalData.impression?.[id];
+            if(!i) return;
+            document.getElementById('edit-modal-title').innerText = '오늘하루 내용 수정';
+            document.getElementById('edit-modal-textarea').value = i.content;
+            document.getElementById('edit-modal-save').onclick = async () => {
+                const newContent = document.getElementById('edit-modal-textarea').value.trim();
+                if(!newContent) return window.showToast("내용을 입력해주세요.", 'error');
+                await update(ref(db,`class306/impression/${id}`), {content: newContent});
+                window.closeEditModal();
+                window.showToast("수정되었습니다.");
+            };
+            document.getElementById('edit-modal').classList.add('open');
+        };
+        window.deleteTodayItem = async (id, name) => {
+            if(!confirm(`${name}의 오늘하루 기록을 삭제할까요?`)) return;
+            await remove(ref(db,`class306/impression/${id}`));
+            window.showToast("삭제되었습니다.");
+        };
+
+        window.closeEditModal = () => { document.getElementById('edit-modal').classList.remove('open'); };
 
         function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
 
@@ -1102,21 +1157,18 @@
 
         /* 평가 안내 */
         .notice-header-row {
-            display: flex; align-items: center; justify-content: space-between;
+            display: flex; align-items: flex-start; justify-content: space-between;
             margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
         }
         .notice-subject-scroll {
-            display: flex; gap: 6px; overflow-x: auto;
-            padding-bottom: 4px; flex-wrap: nowrap;
-            scrollbar-width: none;
+            display: flex; gap: 6px; flex-wrap: wrap; flex: 1;
         }
-        .notice-subject-scroll::-webkit-scrollbar { display: none; }
         .notice-subject-btn {
             padding: 6px 14px; border: 1px solid var(--hairline);
             border-radius: var(--pill); background: var(--canvas);
             font-family: inherit; font-size: 12px; font-weight: 400;
             color: var(--ink-mute); cursor: pointer; white-space: nowrap;
-            transition: all 0.15s; flex-shrink: 0;
+            transition: all 0.15s;
         }
         .notice-subject-btn:hover { background: var(--canvas-soft); }
         .notice-subject-btn.active { background: var(--notice); color: white; border-color: var(--notice); font-weight: 500; }
@@ -1178,10 +1230,7 @@
         .sort-bar { display: flex; gap: 6px; margin-bottom: 16px; }
         .sort-btn { padding: 6px 14px; border: 1px solid var(--hairline); border-radius: var(--pill); background: var(--canvas); font-family: inherit; font-size: 12px; font-weight: 400; color: var(--ink-mute); cursor: pointer; transition: all 0.15s; }
         .sort-btn.active { background: var(--ink); color: white; border-color: var(--ink); }
-        .today-item { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
-        .today-item:last-child { border-bottom: none; }
-        .today-item b { color: var(--ink); font-weight: 500; white-space: nowrap; }
-        .today-item span { color: var(--ink-secondary); }
+
         .q-box { background: var(--primary-subdued); border-radius: var(--radius-md); padding: 18px; margin-bottom: 18px; text-align: center; }
         .q-box h4 { font-size: 15px; font-weight: 400; color: var(--primary-deep); letter-spacing: -0.2px; }
         .auto-tag { display: inline-flex; align-items: center; font-size: 11px; font-weight: 500; color: var(--green); background: var(--green-bg); padding: 3px 10px; border-radius: var(--pill); margin-bottom: 14px; }
@@ -1203,6 +1252,28 @@
 
         .btn-main { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--primary); color: white; font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: background 0.15s; }
         .btn-main:hover { background: var(--primary-deep); }
+
+        /* ── 선생님 수정/삭제 버튼 ── */
+        .admin-card-actions { display: flex; gap: 6px; margin-top: 10px; }
+        .btn-admin-edit {
+            padding: 5px 12px; border-radius: var(--pill);
+            background: var(--canvas-soft); color: var(--ink-secondary);
+            border: 1px solid var(--hairline); font-family: inherit;
+            font-size: 12px; cursor: pointer; transition: all 0.15s;
+        }
+        .btn-admin-edit:hover { background: var(--hairline); }
+        .btn-admin-del {
+            padding: 5px 12px; border-radius: var(--pill);
+            background: var(--red-bg); color: var(--red);
+            border: none; font-family: inherit;
+            font-size: 12px; cursor: pointer; transition: all 0.15s;
+        }
+        .btn-admin-del:hover { background: #fbd5d1; }
+        .today-item { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+        .today-item:last-child { border-bottom: none; }
+        .today-item-content { display: flex; gap: 10px; }
+        .today-item-content b { color: var(--ink); font-weight: 500; white-space: nowrap; }
+        .today-item-content span { color: var(--ink-secondary); }
 
         .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; }
 
@@ -1347,6 +1418,18 @@
         <div style="display:flex;gap:10px;margin-top:4px;">
             <button id="notice-submit-btn" class="btn-main" onclick="window.submitNotice()" style="flex:2;">저장</button>
             <button class="btn-main" onclick="window.closeNoticeForm()" style="flex:1;background:var(--canvas);color:var(--ink-mute);border:1px solid var(--hairline);">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 선생님 수정 모달 -->
+<div id="edit-modal" class="modal-overlay" onclick="if(event.target===this)window.closeEditModal()">
+    <div class="modal-box" style="text-align:left;">
+        <h2 id="edit-modal-title" style="font-size:17px;font-weight:500;margin-bottom:16px;letter-spacing:-0.3px;"></h2>
+        <textarea id="edit-modal-textarea" rows="5" style="width:100%;margin-bottom:12px;"></textarea>
+        <div style="display:flex;gap:8px;">
+            <button id="edit-modal-save" class="btn-confirm" style="flex:2;">저장</button>
+            <button class="btn-modal-close" onclick="window.closeEditModal()" style="flex:1;">취소</button>
         </div>
     </div>
 </div>
