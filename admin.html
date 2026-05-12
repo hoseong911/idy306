@@ -63,6 +63,12 @@
         window.toggleAllStudents = (type) => {
             document.querySelectorAll('#adm-mileage-list .student-check').forEach(cb => { cb.checked = type === 'all'; });
         };
+
+        // ★ [수정 4] 수행평가 체크박스 토글
+        window.toggleAssessment = () => {
+            const checked = document.getElementById('adm-cal-is-assessment').checked;
+            document.getElementById('adm-cal-assessment-subject-wrap').style.display = checked ? 'block' : 'none';
+        };
     </script>
 
     <script type="module">
@@ -99,7 +105,6 @@
             renderAdminStudyCert(globalData.studyCert || {});
         });
 
-        // ── 레벨 ──────────────────────────────────────────────────
         function getLevel(score) {
             let level=1, required=10, accumulated=0;
             while(score >= accumulated+required){accumulated+=required;level++;required+=10;}
@@ -113,7 +118,6 @@
             return '#94A3B8';
         }
 
-        // ── 학생 명단 ──────────────────────────────────────────────────
         let editingOriginalNum = null;
 
         window.saveStudent = () => {
@@ -170,7 +174,6 @@
             });
         }
 
-        // ── 스터디 체크 ──────────────────────────────────────────
         function renderAdminStudyCert(certObj) {
             const container = document.getElementById('adm-cert-list');
             if (!container) return;
@@ -242,6 +245,7 @@
         // ── 홈/캘린더 ─────────────────────────────────────────────
         let editingCalId = null;
 
+        // ★ [수정 3, 4] 목록에 배지 표시
         function renderAdminHome(calObj) {
             const list = document.getElementById('adm-cal-list');
             if (!list) return;
@@ -249,55 +253,79 @@
             const sorted = Object.entries(calObj).sort((a,b) => new Date(a[1].date) - new Date(b[1].date));
             if (sorted.length === 0) { list.innerHTML = "<p class='empty-msg'>등록된 일정이 없습니다.</p>"; return; }
             sorted.forEach(([id,c]) => {
+                const assessBadge = c.isAssessment
+                    ? `<span class="cal-assess-badge">${c.assessmentSubject||'수행평가'}</span>` : '';
+                const descIcon = (c.description && c.description.trim()) ? `<span style="font-size:13px;" title="상세내용 있음">📝</span>` : '';
                 list.innerHTML += `
                 <div class="row-item">
-                    <div class="row-item-left">
+                    <div class="row-item-left" style="flex-wrap:wrap;gap:6px;">
                         <span class="cal-date-tag">${c.date.slice(5)}</span>
                         <span class="row-name">${c.title}</span>
+                        ${assessBadge}${descIcon}
                     </div>
                     <div class="row-item-actions">
-                        <button class="btn-sm btn-ghost" onclick="window.editCal('${id}','${c.date}','${c.title.replace(/'/g,"\\'")}')">수정</button>
+                        <button class="btn-sm btn-ghost" onclick="window.editCal('${id}')">수정</button>
                         <button class="btn-sm btn-danger" onclick="window.deleteCal('${id}')">삭제</button>
                     </div>
                 </div>`;
             });
         }
 
-        window.editCal = (id, date, title) => {
+        // ★ [수정 3, 4] editCal: globalData에서 모든 필드 읽기
+        window.editCal = (id) => {
+            const c = globalData.calendar?.[id];
+            if (!c) return;
             editingCalId = id;
-            document.getElementById('adm-cal-date').value = date;
-            document.getElementById('adm-cal-title').value = title;
+            document.getElementById('adm-cal-date').value = c.date;
+            document.getElementById('adm-cal-title').value = c.title;
+            document.getElementById('adm-cal-desc').value = c.description || '';
+            const isAssess = !!c.isAssessment;
+            document.getElementById('adm-cal-is-assessment').checked = isAssess;
+            document.getElementById('adm-cal-assessment-subject-wrap').style.display = isAssess ? 'block' : 'none';
+            if (isAssess && c.assessmentSubject)
+                document.getElementById('adm-cal-assessment-subject').value = c.assessmentSubject;
             document.getElementById('adm-cal-save-btn').innerText = '수정 완료';
             document.getElementById('adm-cal-cancel-btn').style.display = 'inline-flex';
             document.getElementById('adm-cal-title').focus();
         };
 
+        // ★ [수정 3, 4] cancelCalEdit: 추가 필드도 초기화
         window.cancelCalEdit = () => {
             editingCalId = null;
             document.getElementById('adm-cal-date').value = '';
             document.getElementById('adm-cal-title').value = '';
+            document.getElementById('adm-cal-desc').value = '';
+            document.getElementById('adm-cal-is-assessment').checked = false;
+            document.getElementById('adm-cal-assessment-subject-wrap').style.display = 'none';
             document.getElementById('adm-cal-save-btn').innerText = '추가';
             document.getElementById('adm-cal-cancel-btn').style.display = 'none';
         };
 
+        // ★ [수정 3, 4] addCal: description, isAssessment, assessmentSubject 저장
         window.addCal = () => {
             const date = document.getElementById('adm-cal-date').value;
             const title = document.getElementById('adm-cal-title').value.trim();
+            const description = document.getElementById('adm-cal-desc').value.trim();
+            const isAssessment = document.getElementById('adm-cal-is-assessment').checked;
+            const assessmentSubject = isAssessment
+                ? document.getElementById('adm-cal-assessment-subject').value : '';
             if (!date || !title) return window.showToast("날짜와 제목을 입력하세요.", 'error');
+            const data = { date, title, description, isAssessment, assessmentSubject };
             if (editingCalId) {
-                update(ref(db,`class306/calendar/${editingCalId}`), {date, title});
+                update(ref(db, `class306/calendar/${editingCalId}`), data);
                 window.showToast("일정이 수정되었습니다.");
                 window.cancelCalEdit();
             } else {
-                push(ref(db,'class306/calendar'), {date, title});
-                document.getElementById('adm-cal-date').value = '';
-                document.getElementById('adm-cal-title').value = '';
+                push(ref(db, 'class306/calendar'), data);
+                window.cancelCalEdit();
                 window.showToast("일정이 등록되었습니다.");
             }
         };
-        window.deleteCal = (id) => { if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db,`class306/calendar/${id}`)); };
 
-        // ── 마일리지 ──────────────────────────────────────────────
+        window.deleteCal = (id) => {
+            if (confirm("이 일정을 삭제하시겠습니까?")) remove(ref(db, `class306/calendar/${id}`));
+        };
+
         function parseReasons(text) {
             return (text||"").split('\n').map(l=>l.trim()).filter(Boolean)
                 .map(line => { const m=line.match(/^(.+?):\s*\+(\d+)P$/); return m?{label:m[1].trim(),score:parseInt(m[2])}:null; })
@@ -345,7 +373,6 @@
             }
         }
 
-        // ── 마일리지 랭킹 (관리자) ────────────────────────────────
         function renderAdminMileageRanking(data) {
             const container = document.getElementById('adm-mileage-ranking');
             if(!container) return;
@@ -374,7 +401,6 @@
             });
         }
 
-        // ── 마일리지 내역 모달 ────────────────────────────────────
         window.openMileageLog = async (name) => {
             document.getElementById('log-modal-name').innerText = `${name} 마일리지 내역`;
             const container = document.getElementById('log-modal-list');
@@ -401,7 +427,6 @@
         };
         window.closeMileageLog = () => { document.getElementById('log-modal').classList.remove('open'); };
 
-        // ── 과거 내역 수동 추가 ────────────────────────────────────
         window.addManualLog = async () => {
             const nameEl = document.getElementById('manual-log-name');
             const reasonEl = document.getElementById('manual-log-reason');
@@ -480,7 +505,6 @@
             updateReasonDropdowns(); window.showToast("설정이 저장되었습니다.");
         };
 
-        // ── 칭찬감옥 ──────────────────────────────────────────────
         function renderAdminPraise(praiseObj) {
             const pendingEl=document.getElementById('adm-praise-pending');
             const approvedEl=document.getElementById('adm-praise-approved');
@@ -490,7 +514,6 @@
             const pending=Object.entries(praiseObj).filter(([,p])=>!p.approved&&!p.rejected);
             const approved=Object.entries(praiseObj).filter(([,p])=>p.approved);
             const rejected=Object.entries(praiseObj).filter(([,p])=>p.rejected);
-
             const makePraiseCard = (id, p, mode) => `
                 <div class="row-item ${mode==='rejected'?'row-item-muted':''}">
                     <div class="row-item-left" style="flex-direction:column;align-items:flex-start;gap:3px;">
@@ -510,7 +533,6 @@
                         <button class="btn-sm btn-danger" onclick="${mode==='approved'?`window.deletePraiseWithMileage('${id}','${p.from}','${p.to}')`:`window.deletePraise('${id}')`}">삭제</button>
                     </div>
                 </div>`;
-
             if (pending.length===0) pendingEl.innerHTML="<p class='empty-msg'>대기 중인 제보가 없어요.</p>";
             pending.forEach(([id,p]) => pendingEl.innerHTML+=makePraiseCard(id,p,'pending'));
             if (approved.length===0) approvedEl.innerHTML="<p class='empty-msg'>승인된 칭찬이 없어요.</p>";
@@ -554,7 +576,6 @@
             });
         };
 
-        // ── 오늘하루 ──────────────────────────────────────────────
         function renderAdminToday(impObj) {
             const listEl=document.getElementById('adm-today-approved');
             if (!listEl) return;
@@ -616,162 +637,58 @@
             window.showToast("CSV 파일로 내보냈어요.");
         };
 
-        // 학생 드롭다운 (과거 내역 수동 추가)
         function populateManualLogDropdown() {
             const sel = document.getElementById('manual-log-name');
             if(!sel) return;
             sel.innerHTML = '<option value="">학생 선택</option>';
             studentList.forEach(s => sel.innerHTML += `<option value="${s.name}">${s.num}번 ${s.name}</option>`);
         }
-        // onValue 이후 호출
         setTimeout(populateManualLogDropdown, 1000);
         document.addEventListener('DOMContentLoaded', () => {
-            // 재렌더 시 드롭다운도 갱신
             const orig = renderAdminMileage;
         });
     </script>
 
     <style>
         :root {
-            --primary: #533afd;
-            --primary-deep: #4434d4;
-            --primary-press: #2e2b8c;
-            --primary-soft: #665efd;
-            --primary-subdued: #eeedff;
-            --brand-dark: #1c1e54;
-            --ink: #0d253d;
-            --ink-secondary: #273951;
-            --ink-mute: #64748d;
-            --on-primary: #ffffff;
-            --canvas: #ffffff;
-            --canvas-soft: #f6f9fc;
-            --canvas-cream: #f5e9d4;
-            --hairline: #e3e8ee;
-            --hairline-input: #a8c3de;
-            --green: #1a7f5a;
-            --green-bg: #e6f6f0;
-            --red: #c0392b;
-            --red-bg: #fdf0ef;
-            --warn: #d97706;
-            --warn-bg: #fef3c7;
+            --primary: #533afd; --primary-deep: #4434d4; --primary-press: #2e2b8c;
+            --primary-soft: #665efd; --primary-subdued: #eeedff; --brand-dark: #1c1e54;
+            --ink: #0d253d; --ink-secondary: #273951; --ink-mute: #64748d;
+            --on-primary: #ffffff; --canvas: #ffffff; --canvas-soft: #f6f9fc;
+            --canvas-cream: #f5e9d4; --hairline: #e3e8ee; --hairline-input: #a8c3de;
+            --green: #1a7f5a; --green-bg: #e6f6f0; --red: #c0392b; --red-bg: #fdf0ef;
+            --warn: #d97706; --warn-bg: #fef3c7;
             --shadow-1: rgba(0,55,112,0.08) 0 1px 3px;
             --shadow-2: rgba(0,55,112,0.08) 0 8px 24px, rgba(0,55,112,0.04) 0 2px 6px;
-            --max-w: 1100px;
-            --radius-sm: 6px;
-            --radius-md: 8px;
-            --radius-lg: 12px;
-            --radius-pill: 9999px;
+            --max-w: 1100px; --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 9999px;
         }
-
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        body {
-            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 15px; font-weight: 300; line-height: 1.6;
-            color: var(--ink); background: var(--canvas-soft);
-            font-feature-settings: "ss01"; min-height: 100vh;
-        }
-
-        .mesh-hero {
-            background: linear-gradient(135deg,
-                #fef3e2 0%, #fde8c8 8%, #f0e6ff 22%, #d4d0ff 38%,
-                #c7d2ff 52%, #a5b4fc 62%, #fbc8d4 78%, #fda4af 90%, #fecdd3 100%);
-            position: relative; overflow: hidden;
-        }
-        .mesh-hero::before {
-            content: ''; position: absolute; inset: 0;
-            background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(83,58,253,0.12) 0%, transparent 70%),
-                        radial-gradient(ellipse 50% 70% at 80% 30%, rgba(234,34,97,0.10) 0%, transparent 70%);
-            pointer-events: none;
-        }
-
-        /* ── 헤더: 중앙정렬 ── */
-        .top-bar {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            align-items: center;
-            max-width: var(--max-w);
-            margin: 0 auto;
-            padding: 20px 24px;
-            position: relative;
-            z-index: 1;
-        }
-        .top-bar-left {
-            display: flex; align-items: center; gap: 10px;
-            justify-content: flex-start;
-        }
-        .top-bar-center {
-            display: flex; align-items: center; justify-content: center;
-        }
-        .top-bar-right {
-            display: flex; align-items: center; justify-content: flex-end;
-        }
-
-        .back-link {
-            display: inline-flex; align-items: center; gap: 6px;
-            font-size: 14px; font-weight: 400; color: var(--ink-mute);
-            text-decoration: none; padding: 7px 14px;
-            border: 1px solid var(--hairline); border-radius: var(--radius-pill);
-            background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
-            transition: all 0.15s;
-        }
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 15px; font-weight: 300; line-height: 1.6; color: var(--ink); background: var(--canvas-soft); font-feature-settings: "ss01"; min-height: 100vh; }
+        .mesh-hero { background: linear-gradient(135deg, #fef3e2 0%, #fde8c8 8%, #f0e6ff 22%, #d4d0ff 38%, #c7d2ff 52%, #a5b4fc 62%, #fbc8d4 78%, #fda4af 90%, #fecdd3 100%); position: relative; overflow: hidden; }
+        .mesh-hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(83,58,253,0.12) 0%, transparent 70%), radial-gradient(ellipse 50% 70% at 80% 30%, rgba(234,34,97,0.10) 0%, transparent 70%); pointer-events: none; }
+        .top-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; max-width: var(--max-w); margin: 0 auto; padding: 20px 24px; position: relative; z-index: 1; }
+        .top-bar-left { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
+        .top-bar-center { display: flex; align-items: center; justify-content: center; }
+        .top-bar-right { display: flex; align-items: center; justify-content: flex-end; }
+        .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 400; color: var(--ink-mute); text-decoration: none; padding: 7px 14px; border: 1px solid var(--hairline); border-radius: var(--radius-pill); background: rgba(255,255,255,0.7); backdrop-filter: blur(8px); transition: all 0.15s; }
         .back-link:hover { background: white; color: var(--ink); }
-
         .wordmark { font-size: 17px; font-weight: 600; color: var(--ink); letter-spacing: -0.3px; }
         .wordmark span { color: var(--primary); }
-
-        .role-badge {
-            font-size: 11px; font-weight: 500; color: var(--primary-deep);
-            background: var(--primary-subdued); padding: 3px 10px;
-            border-radius: var(--radius-pill); letter-spacing: 0.4px;
-            text-transform: uppercase; display: none;
-        }
-
-        .tab-nav-wrap {
-            max-width: var(--max-w); margin: 0 auto; padding: 0 16px;
-            position: relative; z-index: 1;
-            display: flex; flex-direction: column; align-items: center;
-        }
-
-        .adm-tab-nav {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 4px;
-            background: rgba(255,255,255,0.55); backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.6); border-radius: var(--radius-lg);
-            padding: 6px; width: 100%; max-width: 480px;
-            box-shadow: var(--shadow-1);
-            overflow: hidden;
-        }
-
-        .adm-tab-btn {
-            padding: 9px 10px; border: none; border-radius: var(--radius-md);
-            background: transparent; font-family: inherit; font-size: 13px; font-weight: 400;
-            color: var(--ink-secondary); cursor: pointer; transition: all 0.15s;
-            white-space: nowrap; text-align: center;
-        }
+        .role-badge { font-size: 11px; font-weight: 500; color: var(--primary-deep); background: var(--primary-subdued); padding: 3px 10px; border-radius: var(--radius-pill); letter-spacing: 0.4px; text-transform: uppercase; display: none; }
+        .tab-nav-wrap { max-width: var(--max-w); margin: 0 auto; padding: 0 16px; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+        .adm-tab-nav { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: rgba(255,255,255,0.55); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.6); border-radius: var(--radius-lg); padding: 6px; width: 100%; max-width: 480px; box-shadow: var(--shadow-1); overflow: hidden; }
+        .adm-tab-btn { padding: 9px 10px; border: none; border-radius: var(--radius-md); background: transparent; font-family: inherit; font-size: 13px; font-weight: 400; color: var(--ink-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; text-align: center; }
         .adm-tab-btn:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
         .adm-tab-btn.active { background: white; color: var(--ink); font-weight: 500; box-shadow: var(--shadow-1); }
-
-        /* 스크롤바 전체 숨김 */
-        * { scrollbar-width: none; }
-        *::-webkit-scrollbar { display: none; }
-
+        * { scrollbar-width: none; } *::-webkit-scrollbar { display: none; }
         .hero-pad { padding-bottom: 32px; }
-
         .page-body { max-width: var(--max-w); margin: 0 auto; padding: 32px 32px 64px; }
-
-        .adm-tab-content { display: none; }
-        .adm-tab-content.active { display: block; }
-
+        .adm-tab-content { display: none; } .adm-tab-content.active { display: block; }
         .card { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); margin-bottom: 20px; overflow: hidden; }
         .card-header { padding: 20px 28px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
         .card-title { font-size: 15px; font-weight: 600; color: var(--ink); letter-spacing: -0.2px; }
-        .card-body { padding: 24px 28px; }
-        .card-body + .card-body { border-top: 1px solid var(--hairline); }
-
+        .card-body { padding: 24px 28px; } .card-body + .card-body { border-top: 1px solid var(--hairline); }
         .section-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--ink-mute); margin-bottom: 14px; }
-
         .row-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--hairline); }
         .row-item:last-child { border-bottom: none; }
         .row-item-muted { opacity: 0.6; }
@@ -783,57 +700,45 @@
         .row-subject { font-size: 13px; color: var(--primary); font-weight: 500; }
         .row-question { font-size: 12px; color: var(--ink-mute); font-style: italic; }
 
+        /* ★ [수정 3, 4] 캘린더 목록 배지 */
+        .cal-assess-badge { font-size: 11px; font-weight: 600; background: var(--warn-bg); color: var(--warn); padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap; }
+
+        /* ★ [수정 4] 수행평가 체크박스 행 */
+        .assess-check-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; margin-bottom: 4px; }
+        .assess-check-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; flex-shrink: 0; margin: 0; }
+        .assess-check-row label { font-size: 14px; color: var(--ink-secondary); cursor: pointer; user-select: none; }
+
         .num-badge { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; font-size: 13px; font-weight: 600; color: var(--ink-secondary); background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: var(--radius-md); flex-shrink: 0; font-feature-settings: 'tnum'; }
         .cal-date-tag { font-size: 13px; font-weight: 600; color: var(--primary); background: var(--primary-subdued); padding: 3px 10px; border-radius: var(--radius-pill); white-space: nowrap; font-feature-settings: 'tnum'; }
         .status-badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-pill); }
         .badge-pass { background: var(--green-bg); color: var(--green); }
         .badge-fail { background: var(--red-bg); color: var(--red); }
-
         .score-pill { font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: var(--radius-pill); font-feature-settings: 'tnum'; }
         .score-pos { background: var(--green-bg); color: var(--green); }
         .score-neg { background: var(--canvas-soft); color: var(--ink-mute); }
-
         .stats-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .stat-item { font-size: 14px; color: var(--ink-mute); }
-        .stat-sep { color: var(--hairline); font-size: 14px; }
-        .c-green { color: var(--green); }
-        .c-red { color: var(--red); }
-        .c-indigo { color: var(--primary); }
-
+        .stat-item { font-size: 14px; color: var(--ink-mute); } .stat-sep { color: var(--hairline); font-size: 14px; }
+        .c-green { color: var(--green); } .c-red { color: var(--red); } .c-indigo { color: var(--primary); }
         .date-group-header { font-size: 12px; font-weight: 600; color: var(--ink-mute); padding: 16px 0 8px; border-bottom: 1px solid var(--hairline); margin-bottom: 2px; display: flex; align-items: center; gap: 8px; }
         .date-group-count { font-weight: 400; color: var(--ink-mute); font-size: 12px; }
-
-        /* Buttons */
         .btn-primary { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; background: var(--primary); color: var(--on-primary); border: none; border-radius: var(--radius-pill); font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
         .btn-primary:hover { background: var(--primary-deep); }
         .btn-secondary { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; background: var(--canvas); color: var(--primary); border: 1px solid var(--primary); border-radius: var(--radius-pill); font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: all 0.15s; }
         .btn-secondary:hover { background: var(--primary-subdued); }
         .btn-sm { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: var(--radius-pill); font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; border: none; white-space: nowrap; transition: all 0.15s; text-decoration: none; }
-        .btn-sm.btn-primary { background: var(--primary); color: white; }
-        .btn-sm.btn-primary:hover { background: var(--primary-deep); }
-        .btn-sm.btn-ghost { background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); }
-        .btn-sm.btn-ghost:hover { background: var(--hairline); }
-        .btn-sm.btn-danger { background: var(--red-bg); color: var(--red); }
-        .btn-sm.btn-danger:hover { background: #fbd5d1; }
+        .btn-sm.btn-primary { background: var(--primary); color: white; } .btn-sm.btn-primary:hover { background: var(--primary-deep); }
+        .btn-sm.btn-ghost { background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); } .btn-sm.btn-ghost:hover { background: var(--hairline); }
+        .btn-sm.btn-danger { background: var(--red-bg); color: var(--red); } .btn-sm.btn-danger:hover { background: #fbd5d1; }
         .btn-sm.btn-warn { background: var(--warn-bg); color: var(--warn); }
         .btn-full { width: 100%; padding: 11px 20px; background: var(--primary); color: white; border: none; border-radius: var(--radius-pill); font-family: inherit; font-size: 15px; font-weight: 400; cursor: pointer; transition: background 0.15s; }
         .btn-full:hover { background: var(--primary-deep); }
         .btn-full.btn-full-ghost { background: var(--canvas); color: var(--ink-secondary); border: 1px solid var(--hairline); }
         .btn-full.btn-danger-full { background: var(--red-bg); color: var(--red); border: 1px solid #fbd5d1; }
-
-        /* Forms */
         .form-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 16px; }
-        input[type="text"], input[type="number"], input[type="date"], input[type="password"], textarea, select {
-            width: 100%; padding: 10px 14px; font-family: inherit; font-size: 14px; font-weight: 400;
-            color: var(--ink); background: var(--canvas); border: 1px solid var(--hairline-input);
-            border-radius: var(--radius-sm); outline: none; transition: border-color 0.15s; margin-bottom: 10px;
-        }
+        input[type="text"], input[type="number"], input[type="date"], input[type="password"], textarea, select { width: 100%; padding: 10px 14px; font-family: inherit; font-size: 14px; font-weight: 400; color: var(--ink); background: var(--canvas); border: 1px solid var(--hairline-input); border-radius: var(--radius-sm); outline: none; transition: border-color 0.15s; margin-bottom: 10px; }
         input:focus, textarea:focus, select:focus { border-color: var(--primary); }
-        input[type="number"] { -moz-appearance: textfield; }
-        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        input[type="number"] { -moz-appearance: textfield; } input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
         textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
-
-        /* Mileage grid */
         .student-check-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 280px; overflow-y: auto; margin-bottom: 16px; padding: 2px; }
         .adm-mileage-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--canvas-soft); border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer; transition: all 0.12s; }
         .adm-mileage-item:has(.student-check:checked) { border-color: var(--primary); background: var(--primary-subdued); }
@@ -847,22 +752,12 @@
         .action-bar .btn-full { flex: 2; }
         .deduct-group { flex: 1; display: flex; flex-direction: column; gap: 6px; }
         .deduct-group input { margin-bottom: 0; }
-
-        /* 마일리지 랭킹 (관리자) */
-        .adm-rank-row {
-            display: flex; align-items: center; gap: 12px;
-            padding: 12px 16px; border-radius: var(--radius-md);
-            background: var(--canvas-soft); border: 1px solid var(--hairline);
-            margin-bottom: 6px; cursor: pointer; transition: all 0.15s;
-        }
+        .adm-rank-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--radius-md); background: var(--canvas-soft); border: 1px solid var(--hairline); margin-bottom: 6px; cursor: pointer; transition: all 0.15s; }
         .adm-rank-row:hover { background: var(--primary-subdued); border-color: var(--primary); }
-        .adm-rank-medal { font-size: 18px; flex-shrink: 0; }
-        .adm-rank-name { flex: 1; font-size: 14px; font-weight: 500; color: var(--ink); }
+        .adm-rank-medal { font-size: 18px; flex-shrink: 0; } .adm-rank-name { flex: 1; font-size: 14px; font-weight: 500; color: var(--ink); }
         .adm-rank-lv { font-size: 11px; font-weight: 500; border: 1.5px solid; border-radius: var(--radius-pill); padding: 2px 8px; }
         .adm-rank-score { font-size: 14px; font-weight: 500; color: var(--primary); font-feature-settings: 'tnum'; }
         .adm-rank-arrow { font-size: 12px; color: var(--ink-mute); flex-shrink: 0; }
-
-        /* 마일리지 로그 모달 */
         .log-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(13,37,61,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
         .log-modal-overlay.open { display: flex; }
         .log-modal-box { background: white; border-radius: 16px; padding: 0; max-width: 480px; width: 94%; max-height: 80vh; box-shadow: var(--shadow-2); display: flex; flex-direction: column; overflow: hidden; }
@@ -873,23 +768,13 @@
         .log-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
         .log-row:last-child { border-bottom: none; }
         .log-left { display: flex; flex-direction: column; gap: 2px; }
-        .log-reason { font-size: 14px; font-weight: 400; color: var(--ink); }
-        .log-time { font-size: 12px; color: var(--ink-mute); }
+        .log-reason { font-size: 14px; font-weight: 400; color: var(--ink); } .log-time { font-size: 12px; color: var(--ink-mute); }
         .log-score { font-size: 14px; font-weight: 600; white-space: nowrap; font-feature-settings: 'tnum'; }
-
-        /* Info box */
         .info-box { background: var(--primary-subdued); border: 1px solid #d4d0ff; border-radius: var(--radius-md); padding: 14px 18px; font-size: 14px; color: var(--primary-deep); line-height: 1.7; margin-bottom: 16px; }
-        .info-box a { color: var(--primary); font-weight: 500; }
-        .info-box code { background: #d4d0ff; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+        .info-box a { color: var(--primary); font-weight: 500; } .info-box code { background: #d4d0ff; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
         .auto-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--green); background: var(--green-bg); padding: 3px 10px; border-radius: var(--radius-pill); }
-
-        /* Toast */
         .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(120px); background: var(--ink); color: white; padding: 12px 24px; border-radius: var(--radius-pill); font-size: 14px; font-weight: 400; z-index: 9999; transition: transform 0.25s cubic-bezier(.22,.68,0,1.2); white-space: nowrap; box-shadow: var(--shadow-2); }
-        .toast.show { transform: translateX(-50%) translateY(0); }
-        .toast.error { background: #c0392b; }
-        .toast.levelup { background: var(--primary); }
-
-        /* Modal */
+        .toast.show { transform: translateX(-50%) translateY(0); } .toast.error { background: #c0392b; } .toast.levelup { background: var(--primary); }
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(13,37,61,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
         .modal-overlay.open { display: flex; }
         .modal-box { background: white; border-radius: 16px; padding: 48px 40px; max-width: 400px; width: 90%; box-shadow: var(--shadow-2); text-align: center; }
@@ -899,24 +784,17 @@
         .modal-pw-input { width: 100%; padding: 14px 18px; font-size: 20px; text-align: center; letter-spacing: 6px; border: 1px solid var(--hairline-input); border-radius: var(--radius-sm); background: white; outline: none; margin-bottom: 14px; font-family: inherit; }
         .modal-pw-input:focus { border-color: var(--primary); }
         .modal-error { color: var(--red); font-size: 13px; margin-bottom: 14px; display: none; background: var(--red-bg); padding: 8px 14px; border-radius: var(--radius-md); }
-
         .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; line-height: 1.7; }
         .note-text { text-align: center; font-size: 12px; color: var(--ink-mute); padding: 8px 0; }
         .divider { height: 1px; background: var(--hairline); margin: 20px 0; }
-
         @keyframes shake { 0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)} }
         .shake { animation: shake 0.35s ease; }
-
         @media (max-width: 768px) {
-            .top-bar { padding: 16px 16px; }
-            .wordmark { font-size: 15px; }
+            .top-bar { padding: 16px 16px; } .wordmark { font-size: 15px; }
             .back-link { font-size: 13px; padding: 6px 10px; }
-            .tab-nav-wrap { padding: 0 12px; }
-            .adm-tab-nav { max-width: 100%; }
+            .tab-nav-wrap { padding: 0 12px; } .adm-tab-nav { max-width: 100%; }
             .adm-tab-btn { padding: 8px 6px; font-size: 12px; }
-            .page-body { padding: 20px 16px 48px; }
-            .card-body { padding: 18px 20px; }
-            .card-header { padding: 16px 20px; }
+            .page-body { padding: 20px 16px 48px; } .card-body { padding: 18px 20px; } .card-header { padding: 16px 20px; }
             .student-check-list { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
@@ -981,11 +859,34 @@
         <div class="card">
             <div class="card-header"><span class="card-title">📅 일정 등록 / 수정</span></div>
             <div class="card-body">
+                <!-- 기존과 동일한 날짜+제목 행 -->
                 <div class="form-row">
                     <input type="date" id="adm-cal-date" style="margin-bottom:0;flex:1;">
                     <input type="text" id="adm-cal-title" placeholder="일정 제목" style="margin-bottom:0;flex:2;">
                     <button id="adm-cal-save-btn" class="btn-primary" onclick="window.addCal()" style="flex-shrink:0;">추가</button>
                     <button id="adm-cal-cancel-btn" class="btn-sm btn-ghost" onclick="window.cancelCalEdit()" style="display:none;flex-shrink:0;">취소</button>
+                </div>
+                <!-- ★ [수정 3] 상세 내용 입력 -->
+                <textarea id="adm-cal-desc" rows="3" placeholder="상세 내용 (선택) — 학생이 일정을 클릭하면 팝업으로 표시돼요"></textarea>
+                <!-- ★ [수정 4] 수행평가 체크박스 -->
+                <div class="assess-check-row">
+                    <input type="checkbox" id="adm-cal-is-assessment" onchange="window.toggleAssessment()">
+                    <label for="adm-cal-is-assessment">수행평가 일정이에요 (체크하면 학생 화면에서 '평가 안내 보기' 버튼이 생겨요)</label>
+                </div>
+                <div id="adm-cal-assessment-subject-wrap" style="display:none;">
+                    <select id="adm-cal-assessment-subject" style="margin-bottom:0;">
+                        <option value="국어">국어</option>
+                        <option value="영어">영어</option>
+                        <option value="수학">수학</option>
+                        <option value="사회">사회</option>
+                        <option value="역사">역사</option>
+                        <option value="과학">과학</option>
+                        <option value="정보">정보</option>
+                        <option value="음악">음악</option>
+                        <option value="미술">미술</option>
+                        <option value="체육">체육</option>
+                        <option value="정기시험">정기시험</option>
+                    </select>
                 </div>
             </div>
             <div class="card-body">
@@ -998,7 +899,6 @@
     <!-- 2. 마일리지 -->
     <div id="adm-mileage" class="adm-tab-content">
 
-        <!-- 랭킹 -->
         <div class="card">
             <div class="card-header"><span class="card-title">🏆 마일리지 랭킹</span><span style="font-size:13px;color:var(--ink-mute);">이름을 클릭하면 내역을 볼 수 있어요</span></div>
             <div class="card-body">
@@ -1006,7 +906,6 @@
             </div>
         </div>
 
-        <!-- 과거 내역 수동 추가 -->
         <div class="card">
             <div class="card-header"><span class="card-title">📝 과거 내역 수동 추가</span></div>
             <div class="card-body">
@@ -1021,7 +920,6 @@
             </div>
         </div>
 
-        <!-- 적립/차감 -->
         <div class="card">
             <div class="card-header"><span class="card-title">⚙️ 적립 설정</span></div>
             <div class="card-body">
