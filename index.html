@@ -9,11 +9,29 @@
     <script>
         let currentUser = null;
 
+        // [수정 1] 자동로그인: localStorage 우선 확인, 없으면 sessionStorage
         function loadSession() {
-            try { const s = sessionStorage.getItem('306user'); if (s) currentUser = JSON.parse(s); } catch(e) { currentUser = null; }
+            try {
+                const ls = localStorage.getItem('306user_auto');
+                if (ls) { currentUser = JSON.parse(ls); return; }
+                const s = sessionStorage.getItem('306user');
+                if (s) currentUser = JSON.parse(s);
+            } catch(e) { currentUser = null; }
         }
-        function saveSession(u) { currentUser = u; sessionStorage.setItem('306user', JSON.stringify(u)); }
-        function clearSession() { currentUser = null; sessionStorage.removeItem('306user'); }
+        function saveSession(u, autoLogin = false) {
+            currentUser = u;
+            if (autoLogin) {
+                localStorage.setItem('306user_auto', JSON.stringify(u));
+                sessionStorage.setItem('306user', JSON.stringify(u));
+            } else {
+                sessionStorage.setItem('306user', JSON.stringify(u));
+            }
+        }
+        function clearSession() {
+            currentUser = null;
+            sessionStorage.removeItem('306user');
+            localStorage.removeItem('306user_auto');
+        }
         loadSession();
 
         const PROTECTED = ['study','praise','today'];
@@ -113,6 +131,7 @@
                 if (pwBtn) pwBtn.style.display = 'none';
                 PROTECTED.forEach(id => {
                     const btn = document.getElementById('btn-' + id);
+                    // [수정 2] locked 클래스는 유지하되 자물쇠 이모지는 CSS에서 제거
                     if (btn) { btn.classList.add('locked'); btn.setAttribute('title','로그인이 필요합니다'); }
                 });
                 ['study','praise','today'].forEach(id => {
@@ -207,15 +226,17 @@
             return NaN;
         }
 
+        // [수정 1] doLogin에 autoLogin 파라미터 추가
         window.doLogin = async () => {
             const rawNum = document.getElementById('login-num').value.trim();
             const nameVal = document.getElementById('login-name').value.trim();
             const pwVal = document.getElementById('login-pw').value;
+            const autoLogin = document.getElementById('login-auto-check')?.checked || false;
             const errEl = document.getElementById('login-error');
             errEl.style.display = 'none';
             if (!rawNum || !nameVal || !pwVal) { errEl.innerText="모든 항목을 입력해주세요."; errEl.style.display='block'; return; }
             if (rawNum==='00000' && nameVal==='호성' && pwVal==='0000') {
-                saveSession({num:0, name:'호성(테스트)', isTest:true});
+                saveSession({num:0, name:'호성(테스트)', isTest:true}, autoLogin);
                 updateNavUI(); updateDropdownsForUser(); window.closeLoginModal();
                 window.showToast("🧪 테스트 모드로 접속했어요!", 'levelup');
                 if (pendingSection) { window.showSection(pendingSection); pendingSection=null; }
@@ -227,12 +248,38 @@
             if (!student) { errEl.innerText="학번 또는 이름이 올바르지 않아요."; errEl.style.display='block'; return; }
             const storedPw = student.pw || "0000";
             if (pwVal !== storedPw) { errEl.innerText="비밀번호가 틀렸어요. (초기 비밀번호: 0000)"; errEl.style.display='block'; return; }
-            saveSession({num:student.num, name:student.name});
+            saveSession({num:student.num, name:student.name}, autoLogin);
             updateNavUI(); updateDropdownsForUser(); window.closeLoginModal();
             const isFirstLogin = !student.pw || student.pw==='0000';
             if (isFirstLogin) { setTimeout(() => window.openForcePwModal(), 400); window.showToast(`${student.name} 학생, 환영해요! 비밀번호를 변경해 주세요 🔐`); }
             else window.showToast(`${student.name} 학생, 환영해요! 👋`);
             if (pendingSection && !isFirstLogin) { window.showSection(pendingSection); pendingSection=null; }
+            // ★ 로그인 마일리지: 하루 1회 기록, 누적 3회마다 +1P
+            try {
+                const todayISO = new Date().toISOString().slice(0,10);
+                const logRef = ref(db, `class306/loginLog/${student.name}`);
+                const logSnap = await get(logRef);
+                const logObj = logSnap.val() || {};
+                const alreadyToday = Object.values(logObj).includes(todayISO);
+                if (!alreadyToday) {
+                    await push(logRef, todayISO);
+                    const totalCount = Object.keys(logObj).length + 1; // 방금 추가한 것 포함
+                    if (totalCount % 3 === 0) {
+                        const [mSnap, eSnap] = await Promise.all([
+                            get(ref(db, `class306/mileage/${student.name}`)),
+                            get(ref(db, `class306/totalEarned/${student.name}`))
+                        ]);
+                        const cur = mSnap.val() || 0, earned = eSnap.val() || cur;
+                        await set(ref(db, `class306/mileage/${student.name}`), cur + 1);
+                        await set(ref(db, `class306/totalEarned/${student.name}`), earned + 1);
+                        await push(ref(db, `class306/mileageLog/${student.name}`), {
+                            reason: `로그인 ${totalCount}회 달성`, score: 1,
+                            date: todayISO, time: new Date().toLocaleString('ko-KR')
+                        });
+                        setTimeout(() => window.showToast(`🎉 로그인 ${totalCount}회! +1P 적립`, 'levelup'), 1000);
+                    }
+                }
+            } catch(e) { console.warn('로그인 마일리지 오류:', e); }
         };
 
         window.openForcePwModal = () => { document.getElementById('force-pw-modal').classList.add('open'); document.getElementById('force-pw-new').focus(); };
@@ -285,6 +332,7 @@
             updateDropdownsForUser();
         }
 
+        // [수정 3, 4] 캘린더 렌더링 - 클릭 시 상세 모달 / 수행평가 연동
         function renderHome(calObj) {
             const today = new Date();
             const diffStart = Math.floor((today-startDate)/(1000*60*60*24))+1;
@@ -296,8 +344,61 @@
             const threeWeeks=new Date(); threeWeeks.setDate(today.getDate()+21);
             const sorted=Object.entries(calObj).filter(([,c])=>{const d=new Date(c.date);return d>=today&&d<=threeWeeks;}).sort((a,b)=>new Date(a[1].date)-new Date(b[1].date));
             if(sorted.length===0) container.innerHTML="<p class='empty-msg'>3주 내 일정이 없습니다.</p>";
-            else sorted.forEach(([,c]) => container.innerHTML+=`<div class="cal-row"><span class="cal-tag">${c.date.slice(5)}</span><span class="cal-title">${c.title}</span></div>`);
+            else sorted.forEach(([id,c]) => {
+                const isAssessment = c.isAssessment || false;
+                const hasDesc = c.description && c.description.trim();
+                const isClickable = hasDesc || isAssessment;
+                const row = document.createElement('div');
+                row.className = 'cal-row' + (isClickable ? ' cal-row-clickable' : '');
+                row.innerHTML = `
+                    <span class="cal-tag">${c.date.slice(5)}</span>
+                    <span class="cal-title">${c.title}</span>
+                    ${isAssessment ? `<span class="cal-assessment-badge">${c.assessmentSubject||'수행평가'}</span>` : ''}
+                    ${isClickable ? `<span class="cal-arrow">›</span>` : ''}
+                `;
+                if(isClickable) {
+                    row.addEventListener('click', () => openCalModal(c));
+                }
+                container.appendChild(row);
+            });
         }
+
+        // [수정 3] 일정 상세 모달 열기
+        window.openCalModal = (c) => {
+            const modal = document.getElementById('cal-detail-modal');
+            document.getElementById('cal-modal-date').innerText = c.date;
+            document.getElementById('cal-modal-title').innerText = c.title;
+            const descEl = document.getElementById('cal-modal-desc');
+            if(c.description && c.description.trim()) {
+                descEl.innerText = c.description;
+                descEl.style.display = 'block';
+            } else {
+                descEl.style.display = 'none';
+            }
+            // [수정 4] 수행평가인 경우 연결 버튼 표시
+            const linkBtn = document.getElementById('cal-modal-notice-btn');
+            if(c.isAssessment && c.assessmentSubject) {
+                linkBtn.style.display = 'block';
+                linkBtn.onclick = () => {
+                    window.closeCalModal();
+                    window.showSection('notice');
+                    // 해당 과목 탭 선택
+                    setTimeout(() => {
+                        const btns = document.querySelectorAll('.notice-subject-btn');
+                        btns.forEach(b => {
+                            if(b.innerText.trim() === c.assessmentSubject) {
+                                window.selectNoticeSubject(b, c.assessmentSubject);
+                            }
+                        });
+                    }, 100);
+                };
+                linkBtn.innerText = `📋 ${c.assessmentSubject} 평가 안내 보기`;
+            } else {
+                linkBtn.style.display = 'none';
+            }
+            modal.classList.add('open');
+        };
+        window.closeCalModal = () => { document.getElementById('cal-detail-modal').classList.remove('open'); };
 
         function getLevel(score) {
             let level=1,required=10,accumulated=0;
@@ -379,7 +480,6 @@
             const from=currentUser.name, to=document.getElementById('p-to').value, when=document.getElementById('p-when').value.trim(), where=document.getElementById('p-where').value.trim(), content=document.getElementById('p-content').value.trim();
             if(!to||!when||!where||!content) return window.showToast("모든 항목을 입력해주세요.", 'error');
             if(from===to) return window.showToast("자기 자신은 칭찬할 수 없어요!", 'error');
-            // 공백 제외 30자 이상
             const contentNoSpace = content.replace(/\s/g,'');
             if(contentNoSpace.length < 30) return window.showToast(`칭찬 내용을 공백 제외 30자 이상 작성해주세요! (현재 ${contentNoSpace.length}자)`, 'error');
             push(ref(db,'class306/praise'),{from,to,when,where,content,approved:false,time:new Date().toLocaleString('ko-KR')});
@@ -426,7 +526,6 @@
             if(!currentUser) return window.showToast("로그인이 필요합니다.", 'error');
             const name=currentUser.name, content=document.getElementById('t-content').value.trim(), q=document.getElementById('daily-q-text').innerText;
             if(!content) return window.showToast("내용을 입력하세요.", 'error');
-            // 공백 제외 20자 이상
             const contentNoSpace = content.replace(/\s/g,'');
             if(contentNoSpace.length < 20) return window.showToast(`공백 제외 20자 이상 작성해주세요! (현재 ${contentNoSpace.length}자)`, 'error');
             const todayKR=new Date().toLocaleDateString('ko-KR');
@@ -439,7 +538,6 @@
                 const cur=mSnap.val()||0,earned=eSnap.val()||cur,afterEarned=earned+1;
                 await set(ref(db,`class306/mileage/${name}`),cur+1);
                 await set(ref(db,`class306/totalEarned/${name}`),afterEarned);
-                // 마일리지 로그 기록
                 await push(ref(db,`class306/mileageLog/${name}`),{reason:'오늘하루',score:1,date:new Date().toISOString().slice(0,10),time:new Date().toLocaleString('ko-KR')});
                 if(getLevel(earned).level<getLevel(afterEarned).level) setTimeout(()=>window.showToast(`🎉 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),800);
                 document.getElementById('t-content').value='';
@@ -464,6 +562,19 @@
             if(!file) return window.showToast("사진을 선택해주세요.",'error');
             if(!studyContent) return window.showToast("무엇을 공부했는지 입력해주세요.",'error');
             if(getTodayCertCount(name)>=1) return window.showToast("오늘은 이미 체크했어요! 내일 또 해요 😊",'error');
+            // ★ 시간 제한: 평일 15:00~24:00 / 주말·공휴일 06:00~24:00
+            if(!currentUser.isTest) {
+                const now = new Date();
+                const hour = now.getHours();
+                const dow = now.getDay();
+                const dateStr = now.toISOString().slice(0,10);
+                const isHolidayOrWeekend = holidays.includes(dateStr) || dow===0 || dow===6;
+                if (isHolidayOrWeekend) {
+                    if (hour < 6) return window.showToast("🌙 주말·공휴일은 오전 6시 이후에 제출할 수 있어요", 'error');
+                } else {
+                    if (hour < 15) return window.showToast("📚 평일은 오후 3시 이후에 제출할 수 있어요", 'error');
+                }
+            }
             if(currentUser.isTest){document.getElementById('cert-file-input').value='';document.getElementById('cert-study-content').value='';document.getElementById('cert-preview').style.display='none';document.getElementById('cert-placeholder').style.display='flex';return window.showToast("🧪 [테스트] AI 판정 완료! (실제 저장 안됨)",'levelup');}
             const CLAUDE_API_KEY=globalData.config?.claudeApiKey||"";
             if(!CLAUDE_API_KEY) return window.showToast("API 키가 설정되지 않았습니다.",'error');
@@ -486,7 +597,6 @@
                     const before=mSnap.val()||0,beforeEarned=eSnap.val()||before,afterEarned=beforeEarned+CERT_MILEAGE;
                     await set(ref(db,`class306/mileage/${name}`),before+CERT_MILEAGE);
                     await set(ref(db,`class306/totalEarned/${name}`),afterEarned);
-                    // 마일리지 로그
                     await push(ref(db,`class306/mileageLog/${name}`),{reason:'스터디 체크',score:CERT_MILEAGE,date:todayISO,time:new Date().toLocaleString('ko-KR')});
                     if(getLevel(beforeEarned).level<getLevel(afterEarned).level)setTimeout(()=>window.showToast(`🎉 ${name} 레벨업! Lv.${getLevel(afterEarned).level}`,'levelup'),1200);
                 }
@@ -526,7 +636,7 @@
             });
         };
 
-        // ── 평가 안내 ──────────────────────────────────────────
+        // ── 평가 안내 ──────────────────────────────────────────────────────────
         const NOTICE_SUBJECTS = ['전체','국어','영어','수학','사회','역사','과학','정보','음악','미술','체육','정기시험'];
 
         window.selectNoticeSubject = (btn, subject) => {
@@ -651,7 +761,6 @@
 
         function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
 
-        // 글자수 카운터
         function updateCharCount(textareaId, countId, minLen) {
             const ta = document.getElementById(textareaId);
             const cnt = document.getElementById(countId);
@@ -782,16 +891,11 @@
         }
         .nav-btn:hover { background: rgba(255,255,255,0.7); }
         .nav-btn.active { background: white; color: var(--ink); font-weight: 500; box-shadow: var(--shadow-1); }
+        /* [수정 2] 자물쇠 이모지 제거 - locked 상태는 색상만 흐리게 */
         .nav-btn.locked { color: #aab4c4; }
-        .nav-btn.locked::after {
-            content: '🔒'; font-size: 9px; position: absolute;
-            top: -5px; right: -5px; background: white;
-            border-radius: 50%; padding: 1px 3px;
-            border: 1px solid var(--hairline);
-        }
 
         .login-area-below {
-            display: flex; justify-content: center;
+            display: flex; justify-content: center; gap: 8px;
             padding: 14px 16px 0; position: relative; z-index: 1;
         }
         .btn-login {
@@ -802,6 +906,11 @@
             cursor: pointer; transition: background 0.15s;
         }
         .btn-login:hover { background: var(--primary-deep); }
+        .btn-login-admin {
+            background: rgba(255,255,255,0.7); color: var(--ink-secondary);
+            border: 1px solid rgba(255,255,255,0.6); backdrop-filter: blur(8px);
+        }
+        .btn-login-admin:hover { background: white; color: var(--ink); }
 
         .progress-banner {
             width: calc(100% - 32px); max-width: var(--max-w);
@@ -850,8 +959,59 @@
         .cal-section-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--ink-mute); margin-bottom: 12px; }
         .cal-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hairline); }
         .cal-row:last-child { border-bottom: none; }
+        /* [수정 3] 클릭 가능한 캘린더 행 */
+        .cal-row-clickable {
+            cursor: pointer; border-radius: var(--radius-sm);
+            transition: background 0.15s;
+            padding: 11px 8px; margin: 0 -8px;
+        }
+        .cal-row-clickable:hover { background: var(--primary-subdued); }
         .cal-tag { font-size: 12px; font-weight: 500; color: var(--primary); background: var(--primary-subdued); padding: 3px 10px; border-radius: var(--pill); white-space: nowrap; font-feature-settings: 'tnum'; }
-        .cal-title { font-size: 14px; color: var(--ink-secondary); }
+        .cal-title { font-size: 14px; color: var(--ink-secondary); flex: 1; }
+        /* [수정 4] 수행평가 배지 */
+        .cal-assessment-badge {
+            font-size: 11px; font-weight: 600;
+            background: var(--notice-bg); color: var(--notice);
+            padding: 2px 8px; border-radius: var(--pill);
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .cal-arrow { font-size: 16px; color: var(--ink-mute); flex-shrink: 0; }
+
+        /* [수정 3] 일정 상세 모달 */
+        .cal-modal-box {
+            background: white; border-radius: 20px; padding: 32px 28px;
+            max-width: 400px; width: 92%; box-shadow: var(--shadow-2);
+            text-align: left;
+        }
+        .cal-modal-date { font-size: 12px; font-weight: 500; color: var(--primary); background: var(--primary-subdued); padding: 4px 12px; border-radius: var(--pill); display: inline-block; margin-bottom: 12px; font-feature-settings: 'tnum'; }
+        .cal-modal-title-text { font-size: 18px; font-weight: 500; color: var(--ink); letter-spacing: -0.3px; margin-bottom: 16px; line-height: 1.4; }
+        .cal-modal-desc { font-size: 14px; color: var(--ink-secondary); line-height: 1.7; background: var(--canvas-soft); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 16px; white-space: pre-wrap; }
+        .cal-modal-notice-btn {
+            display: none; width: 100%; padding: 12px;
+            background: var(--notice); color: white; border: none;
+            border-radius: var(--pill); font-family: inherit;
+            font-size: 14px; font-weight: 400; cursor: pointer;
+            margin-bottom: 10px; transition: background 0.15s;
+        }
+        .cal-modal-notice-btn:hover { background: #b45309; }
+        .cal-modal-close-btn {
+            width: 100%; padding: 11px; border: 1px solid var(--hairline);
+            border-radius: var(--pill); background: white; color: var(--ink-mute);
+            font-family: inherit; font-size: 13px; cursor: pointer;
+        }
+
+        /* [수정 1] 자동로그인 체크박스 */
+        .auto-login-row {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 16px; cursor: pointer;
+        }
+        .auto-login-row input[type="checkbox"] {
+            width: 16px; height: 16px; accent-color: var(--primary);
+            cursor: pointer; margin: 0; flex-shrink: 0;
+        }
+        .auto-login-label {
+            font-size: 13px; color: var(--ink-mute); cursor: pointer; user-select: none;
+        }
 
         /* Mileage rank */
         .rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
@@ -1110,6 +1270,11 @@
         <input type="text" id="login-num" placeholder="학번 (예: 30601)" inputmode="numeric" onkeydown="if(event.key==='Enter')document.getElementById('login-name').focus()">
         <input type="text" id="login-name" placeholder="이름" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()">
         <input type="password" id="login-pw" placeholder="비밀번호" onkeydown="if(event.key==='Enter')window.doLogin()">
+        <!-- [수정 1] 자동로그인 체크박스 -->
+        <label class="auto-login-row">
+            <input type="checkbox" id="login-auto-check">
+            <span class="auto-login-label">자동 로그인 (이 기기에서 유지)</span>
+        </label>
         <button class="btn-confirm" onclick="window.doLogin()">로그인</button>
         <button class="btn-modal-close" onclick="window.closeLoginModal()">닫기</button>
     </div>
@@ -1139,6 +1304,17 @@
         <input type="password" id="pw-new2" placeholder="새 비밀번호 확인" onkeydown="if(event.key==='Enter')window.doChangePw()">
         <button class="btn-confirm" onclick="window.doChangePw()">변경</button>
         <button class="btn-modal-close" onclick="window.closePwModal()">닫기</button>
+    </div>
+</div>
+
+<!-- [수정 3] 일정 상세 모달 -->
+<div id="cal-detail-modal" class="modal-overlay" onclick="if(event.target===this)window.closeCalModal()">
+    <div class="cal-modal-box">
+        <div id="cal-modal-date" class="cal-modal-date"></div>
+        <div id="cal-modal-title" class="cal-modal-title-text"></div>
+        <div id="cal-modal-desc" class="cal-modal-desc" style="display:none;"></div>
+        <button id="cal-modal-notice-btn" class="cal-modal-notice-btn"></button>
+        <button class="cal-modal-close-btn" onclick="window.closeCalModal()">닫기</button>
     </div>
 </div>
 
@@ -1203,12 +1379,12 @@
             <button class="nav-btn" onclick="window.showSection('notice')" id="btn-notice">📋 평가 안내</button>
             <button class="nav-btn locked" onclick="window.showSection('praise')" id="btn-praise">🌟 칭찬감옥</button>
             <button class="nav-btn locked" onclick="window.showSection('today')" id="btn-today">✏️ 오늘하루</button>
-            <button class="nav-btn" onclick="location.href='admin.html'" id="btn-admin" style="color:var(--primary);">🔧 관리자</button>
         </nav>
     </div>
 
     <div class="login-area-below" id="login-area-below">
         <button class="btn-login" id="nav-login-btn" onclick="window.openLoginModal()">🔐 로그인</button>
+        <button class="btn-login btn-login-admin" onclick="location.href='admin.html'">🔧 관리자</button>
     </div>
 </div>
 
