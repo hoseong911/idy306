@@ -463,7 +463,7 @@
             const praiseCard = (id, p) => {
                 const adminBtns = (currentUser && currentUser.isTest)
                     ? `<div class="admin-card-actions"><button class="btn-admin-edit" onclick="window.openPraiseEdit('${id}')">수정</button><button class="btn-admin-del" onclick="window.deletePraiseItem('${id}')">삭제</button></div>` : '';
-                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b> 친구 칭찬!</div>${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
+                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b>${(()=>{const c=p.to[p.to.length-1];const code=(c.charCodeAt(0)-0xAC00)%28;return code===0?'를':'을';})()}칭찬해요♥</div>${p.date?`<div class="praise-date-badge">${p.date}</div>`:''}${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
             };
             if(sortBy==='date') {
                 approved.forEach(([id,p])=>{const d=p.time?p.time.split(' ')[0]:'날짜 미상';if(!grouped[d])grouped[d]=[];grouped[d].push({id,...p});});
@@ -482,13 +482,13 @@
 
         window.submitPraise = () => {
             if(!currentUser) return window.showToast("로그인이 필요합니다.", 'error');
-            const from=currentUser.name, to=document.getElementById('p-to').value, when=document.getElementById('p-when').value.trim(), where=document.getElementById('p-where').value.trim(), content=document.getElementById('p-content').value.trim();
-            if(!to||!when||!where||!content) return window.showToast("모든 항목을 입력해주세요.", 'error');
+            const from=currentUser.name, to=document.getElementById('p-to').value, date=document.getElementById('p-date').value, when=document.getElementById('p-when').value.trim(), where=document.getElementById('p-where').value.trim(), content=document.getElementById('p-content').value.trim();
+            if(!to||!date||!when||!where||!content) return window.showToast("모든 항목을 입력해주세요.", 'error');
             if(from===to) return window.showToast("자기 자신은 칭찬할 수 없어요!", 'error');
             const contentNoSpace = content.replace(/\s/g,'');
             if(contentNoSpace.length < 30) return window.showToast(`칭찬 내용을 공백 제외 30자 이상 작성해주세요! (현재 ${contentNoSpace.length}자)`, 'error');
-            push(ref(db,'class306/praise'),{from,to,when,where,content,approved:false,time:new Date().toLocaleString('ko-KR')});
-            ['p-to','p-when','p-where','p-content'].forEach(id=>document.getElementById(id).value='');
+            push(ref(db,'class306/praise'),{from,to,date,when,where,content,approved:false,time:new Date().toLocaleString('ko-KR')});
+            ['p-to','p-date','p-when','p-where','p-content'].forEach(id=>document.getElementById(id).value='');
             updateCharCount('p-content','p-content-count',30);
             window.showToast("제보 완료! 선생님 승인 후 공개돼요 😊");
         };
@@ -628,7 +628,7 @@
         window.renderStudyCertHistory = certObj => {
             const container=document.getElementById('cert-history-list'); if(!container) return;
             container.innerHTML='';
-            const certs=Object.entries(certObj).sort((a,b)=>new Date(b[1].time)-new Date(a[1].time)).slice(0,30);
+            const certs=Object.entries(certObj).filter(([,c])=>c.result==='pass').sort((a,b)=>new Date(b[1].time)-new Date(a[1].time)).slice(0,30);
             if(certs.length===0) return container.innerHTML="<p class='empty-msg'>아직 체크 기록이 없어요 📚</p>";
             const grouped={};
             certs.forEach(([,c])=>{if(!grouped[c.date])grouped[c.date]=[];grouped[c.date].push(c);});
@@ -642,7 +642,7 @@
                         ${c.studyContent?`<span class="cert-subject">"${c.studyContent}"</span>`:''}
                         <span class="cert-reason">${c.reason}</span>
                     </div>
-                    <span class="cert-score ${c.result==='pass'?'score-pos':'score-neg'}">${c.result==='pass'?'+'+c.mileage+'P':'반려'}</span>
+
                 </div>`);
             });
         };
@@ -995,6 +995,7 @@
         .sub-nav {
             display: flex; gap: 0; border-bottom: 1px solid var(--hairline);
             padding: 0 24px; margin-bottom: 0;
+            justify-content: center;
         }
         .sub-nav button {
             background: none; border: none; border-bottom: 2px solid transparent;
@@ -1107,6 +1108,12 @@
         /* Praise */
         .praise-card { background: var(--canvas-soft); border: 1px solid var(--hairline); border-left: 3px solid var(--primary); border-radius: var(--radius-md); padding: 16px; margin-bottom: 10px; }
         .praise-header { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
+        .praise-date-badge {
+            display: inline-block; font-size: 11px; font-weight: 600;
+            color: var(--primary); background: var(--primary-subdued);
+            padding: 2px 10px; border-radius: var(--pill);
+            margin-bottom: 6px; font-feature-settings: 'tnum';
+        }
         .praise-meta { font-size: 12px; color: var(--ink-mute); margin-bottom: 8px; }
         .praise-body { font-size: 14px; color: var(--ink-secondary); margin: 4px 0; }
         .praise-from { font-size: 12px; color: var(--ink-mute); }
@@ -1623,6 +1630,7 @@
                         <div class="user-info-bar">👤 제보자: <span id="p-from-display"></span></div>
                         <input type="hidden" id="p-from">
                         <select id="p-to"><option value="">칭찬 주인공 선택</option></select>
+                        <input type="date" id="p-date" style="margin-bottom:10px;">
                         <input type="text" id="p-when" placeholder="📅 언제? (예: 오늘 점심시간, 어제 쉬는 시간)">
                         <input type="text" id="p-where" placeholder="📍 어디서? (예: 급식실, 복도, 교실)">
                         <textarea id="p-content" rows="3" placeholder="✏️ 무엇을 했나요? 칭찬 내용을 자세히 적어주세요! (공백 제외 30자 이상)" oninput="window.onPContentInput()"></textarea>
