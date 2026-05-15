@@ -9,7 +9,6 @@
     <script>
         let currentUser = null;
 
-        // [수정 1] 자동로그인: localStorage 우선 확인, 없으면 sessionStorage
         function loadSession() {
             try {
                 const ls = localStorage.getItem('306user_auto');
@@ -35,13 +34,24 @@
         loadSession();
 
         const PROTECTED = ['study','praise','today'];
-        // 글쓰기 권한: 관리자(isTest), 11번 문지민, 23번 제윤아
-        const NOTICE_WRITERS = [11, 23]; // 번호
+        const NOTICE_WRITERS = [11, 23];
+        const HOME_NOTICE_WRITERS = [11, 23];
 
         window.canWriteNotice = () => {
             if (!currentUser) return false;
-            if (currentUser.isTest) return true; // 관리자(테스트모드)
+            if (currentUser.isTest) return true;
             return NOTICE_WRITERS.includes(currentUser.num);
+        };
+
+        window.canWriteHomeNotice = () => {
+            if (!currentUser) return false;
+            if (currentUser.isTest) return true;
+            return HOME_NOTICE_WRITERS.includes(currentUser.num);
+        };
+
+        window.canWriteSectionNotice = () => {
+            if (!currentUser) return false;
+            return currentUser.isTest === true;
         };
 
         window.showSection = (id) => {
@@ -86,6 +96,8 @@
             if (active && PROTECTED.includes(active.id)) window.showSection('home');
             updateDropdownsForUser();
             updateNoticeWriteBtn();
+            updateHomeNoticeWriteBtn();
+            updateSectionNoticeBtns();
             window.showToast("로그아웃 되었습니다.");
         };
 
@@ -131,7 +143,6 @@
                 if (pwBtn) pwBtn.style.display = 'none';
                 PROTECTED.forEach(id => {
                     const btn = document.getElementById('btn-' + id);
-                    // [수정 2] locked 클래스는 유지하되 자물쇠 이모지는 CSS에서 제거
                     if (btn) { btn.classList.add('locked'); btn.setAttribute('title','로그인이 필요합니다'); }
                 });
                 ['study','praise','today'].forEach(id => {
@@ -142,11 +153,27 @@
                 });
             }
             updateNoticeWriteBtn();
+            updateHomeNoticeWriteBtn();
+            updateSectionNoticeBtns();
         }
 
         window.updateNoticeWriteBtn = () => {
             const btn = document.getElementById('notice-write-btn');
             if (btn) btn.style.display = window.canWriteNotice() ? 'inline-flex' : 'none';
+        };
+
+        window.updateHomeNoticeWriteBtn = () => {
+            const btn = document.getElementById('home-notice-write-btn');
+            if (btn) btn.style.display = window.canWriteHomeNotice() ? 'inline-flex' : 'none';
+        };
+
+        window.updateSectionNoticeBtns = () => {
+            const canWrite = window.canWriteSectionNotice();
+            ['mileage-notice-write-btn','study-notice-write-btn','notice-section-notice-write-btn',
+             'praise-notice-write-btn','today-notice-write-btn'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.style.display = canWrite ? 'inline-flex' : 'none';
+            });
         };
 
         window.previewCertPhoto = (input) => {
@@ -168,10 +195,7 @@
             reader.onload = (e) => { preview.src = e.target.result; preview.style.display='block'; placeholder.style.display='none'; };
             reader.readAsDataURL(file);
         };
-
-        const TEST_NUM = '00000', TEST_NAME = '호성', TEST_PW = '0000';
     </script>
-
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
         import { getDatabase, ref, set, push, onValue, get, update, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
@@ -196,16 +220,18 @@
         const holidays = ["2026-01-01","2026-01-28","2026-01-29","2026-01-30","2026-03-01","2026-05-05","2026-05-25","2026-06-06","2026-08-15","2026-09-24","2026-09-25","2026-09-26","2026-10-03","2026-10-09","2026-12-25"];
 
         let CERT_MILEAGE = 3, globalData = {}, studentList = [];
-
-        // 현재 선택된 평가안내 탭
         let currentNoticeSubject = '전체';
         let editingNoticeId = null;
+        let editingSectionNoticeId = null;
+        let editingSectionNoticeSection = null;
+        let editingHomeNoticeId = null;
 
         onValue(ref(db, 'class306'), snapshot => {
             globalData = snapshot.val() || {};
             studentList = globalData.students ? Object.values(globalData.students).sort((a,b) => a.num - b.num) : [];
             if (globalData.config?.certMileage) CERT_MILEAGE = globalData.config.certMileage;
             populateDropdowns();
+            renderHomeNotices(globalData.homeNotices || {});
             renderHome(globalData.calendar || {});
             renderMileage(globalData.mileage || {});
             renderPraise(globalData.praise || {});
@@ -213,6 +239,9 @@
             renderMileageGuide(globalData.config || {});
             renderStudyCertHistory(globalData.studyCert || {});
             renderNotices(globalData.notices || {}, currentNoticeSubject);
+            ['mileage','study','notice','praise','today'].forEach(sec => {
+                renderSectionNotice(sec, globalData.sectionNotices?.[sec] || {});
+            });
             const todayStr = new Date().toLocaleDateString('ko-KR', {month:'long',day:'numeric',weekday:'short'});
             const el = document.getElementById('display-date'); if (el) el.innerText = todayStr;
             autoSetDailyQuestion(globalData.config || {});
@@ -226,7 +255,6 @@
             return NaN;
         }
 
-        // [수정 1] doLogin에 autoLogin 파라미터 추가
         window.doLogin = async () => {
             const rawNum = document.getElementById('login-num').value.trim();
             const nameVal = document.getElementById('login-name').value.trim();
@@ -254,7 +282,6 @@
             if (isFirstLogin) { setTimeout(() => window.openForcePwModal(), 400); window.showToast(`${student.name} 학생, 환영해요! 비밀번호를 변경해 주세요 🔐`); }
             else window.showToast(`${student.name} 학생, 환영해요! 👋`);
             if (pendingSection && !isFirstLogin) { window.showSection(pendingSection); pendingSection=null; }
-            // ★ 로그인 마일리지: 하루 1회 기록, 누적 3회마다 +1P
             try {
                 const todayISO = new Date().toISOString().slice(0,10);
                 const logRef = ref(db, `class306/loginLog/${student.name}`);
@@ -263,7 +290,7 @@
                 const alreadyToday = Object.values(logObj).includes(todayISO);
                 if (!alreadyToday) {
                     await push(logRef, todayISO);
-                    const totalCount = Object.keys(logObj).length + 1; // 방금 추가한 것 포함
+                    const totalCount = Object.keys(logObj).length + 1;
                     if (totalCount % 3 === 0) {
                         const [mSnap, eSnap] = await Promise.all([
                             get(ref(db, `class306/mileage/${student.name}`)),
@@ -332,7 +359,176 @@
             updateDropdownsForUser();
         }
 
-        // [수정 3, 4] 캘린더 렌더링 - 클릭 시 상세 모달 / 수행평가 연동
+        // ── 홈 공지사항 ──
+        function renderHomeNotices(noticesObj) {
+            const container = document.getElementById('home-notice-list'); if(!container) return;
+            container.innerHTML = '';
+            const entries = Object.entries(noticesObj).sort((a,b)=>new Date(b[1].time)-new Date(a[1].time));
+            if(entries.length === 0) {
+                container.innerHTML = '<p style="font-size:12px;color:var(--ink-mute);padding:4px 0;">등록된 공지가 없어요</p>';
+                return;
+            }
+            entries.forEach(([id, n]) => {
+                const canEdit = window.canWriteHomeNotice();
+                container.innerHTML += `
+                <div class="home-notice-item">
+                    <div class="home-notice-top">
+                        <span class="home-notice-badge">📢 공지</span>
+                        <span class="home-notice-date">${n.date||''}</span>
+                        ${canEdit ? `<div class="home-notice-actions">
+                            <button class="btn-hnotice-edit" onclick="window.openHomeNoticeEdit('${id}')">수정</button>
+                            <button class="btn-hnotice-del" onclick="window.deleteHomeNotice('${id}')">삭제</button>
+                        </div>` : ''}
+                    </div>
+                    <div class="home-notice-content">${n.content.replace(/\n/g,'<br>')}</div>
+                    <div class="home-notice-writer">✏️ ${n.writerName}</div>
+                </div>`;
+            });
+        }
+
+        window.openHomeNoticeWrite = () => {
+            if(!window.canWriteHomeNotice()) return window.showToast("글쓰기 권한이 없어요.", 'error');
+            editingHomeNoticeId = null;
+            document.getElementById('home-notice-form-title').innerText = '공지사항 등록';
+            document.getElementById('home-notice-textarea').value = '';
+            document.getElementById('home-notice-form-modal').classList.add('open');
+            document.getElementById('home-notice-textarea').focus();
+        };
+
+        window.openHomeNoticeEdit = (id) => {
+            const n = globalData.homeNotices?.[id]; if(!n) return;
+            if(!window.canWriteHomeNotice()) return window.showToast("수정 권한이 없어요.", 'error');
+            editingHomeNoticeId = id;
+            document.getElementById('home-notice-form-title').innerText = '공지사항 수정';
+            document.getElementById('home-notice-textarea').value = n.content || '';
+            document.getElementById('home-notice-form-modal').classList.add('open');
+        };
+
+        window.closeHomeNoticeForm = () => {
+            document.getElementById('home-notice-form-modal').classList.remove('open');
+            editingHomeNoticeId = null;
+        };
+
+        window.submitHomeNotice = async () => {
+            if(!window.canWriteHomeNotice()) return window.showToast("권한이 없어요.", 'error');
+            const content = document.getElementById('home-notice-textarea').value.trim();
+            if(!content) return window.showToast("내용을 입력해주세요.", 'error');
+            const btn = document.getElementById('home-notice-submit-btn');
+            btn.disabled=true; btn.innerText="저장 중...";
+            try {
+                const data = {
+                    content,
+                    writerName: currentUser.isTest ? '호성쌤' : currentUser.name,
+                    date: new Date().toLocaleDateString('ko-KR'),
+                    time: new Date().toLocaleString('ko-KR')
+                };
+                if(editingHomeNoticeId) {
+                    await update(ref(db,`class306/homeNotices/${editingHomeNoticeId}`), data);
+                    window.showToast("수정되었습니다.");
+                } else {
+                    await push(ref(db,'class306/homeNotices'), data);
+                    window.showToast("공지가 등록되었습니다! 📢");
+                }
+                window.closeHomeNoticeForm();
+            } catch(e){ window.showToast("오류가 발생했어요.", 'error'); }
+            finally{ btn.disabled=false; btn.innerText="저장"; }
+        };
+
+        window.deleteHomeNotice = async (id) => {
+            if(!window.canWriteHomeNotice()) return window.showToast("삭제 권한이 없어요.", 'error');
+            if(!confirm("이 공지를 삭제할까요?")) return;
+            await remove(ref(db,`class306/homeNotices/${id}`));
+            window.showToast("삭제되었습니다.");
+        };
+
+        // ── 섹션별 선생님 공지 ──
+        function renderSectionNotice(section, noticesObj) {
+            const container = document.getElementById(`${section}-section-notice-list`); if(!container) return;
+            container.innerHTML = '';
+            const wrap = document.getElementById(`${section}-notice-area`);
+            const entries = Object.entries(noticesObj).sort((a,b)=>new Date(b[1].time)-new Date(a[1].time));
+            const canWrite = window.canWriteSectionNotice();
+            if(entries.length === 0) {
+                if(wrap) wrap.style.display = canWrite ? 'block' : 'none';
+                if(canWrite) container.innerHTML = '<p style="font-size:12px;color:#0369a1;padding:4px 0;opacity:0.7;">등록된 공지 없음</p>';
+                return;
+            }
+            if(wrap) wrap.style.display = 'block';
+            entries.forEach(([id, n]) => {
+                container.innerHTML += `
+                <div class="section-notice-item">
+                    <div class="section-notice-header">
+                        <span class="section-notice-label">📌 선생님 공지</span>
+                        <span class="section-notice-date">${n.date||''}</span>
+                        ${canWrite ? `<div style="display:flex;gap:4px;margin-left:auto;">
+                            <button class="btn-snotice-edit" onclick="window.openSectionNoticeEdit('${section}','${id}')">수정</button>
+                            <button class="btn-snotice-del" onclick="window.deleteSectionNotice('${section}','${id}')">삭제</button>
+                        </div>` : ''}
+                    </div>
+                    <div class="section-notice-content">${n.content.replace(/\n/g,'<br>')}</div>
+                </div>`;
+            });
+        }
+
+        window.openSectionNoticeWrite = (section) => {
+            if(!window.canWriteSectionNotice()) return window.showToast("글쓰기 권한이 없어요.", 'error');
+            editingSectionNoticeId = null;
+            editingSectionNoticeSection = section;
+            document.getElementById('section-notice-form-title').innerText = '선생님 공지 등록';
+            document.getElementById('section-notice-textarea').value = '';
+            document.getElementById('section-notice-form-modal').classList.add('open');
+            document.getElementById('section-notice-textarea').focus();
+        };
+
+        window.openSectionNoticeEdit = (section, id) => {
+            const n = globalData.sectionNotices?.[section]?.[id]; if(!n) return;
+            if(!window.canWriteSectionNotice()) return window.showToast("수정 권한이 없어요.", 'error');
+            editingSectionNoticeId = id;
+            editingSectionNoticeSection = section;
+            document.getElementById('section-notice-form-title').innerText = '선생님 공지 수정';
+            document.getElementById('section-notice-textarea').value = n.content || '';
+            document.getElementById('section-notice-form-modal').classList.add('open');
+        };
+
+        window.closeSectionNoticeForm = () => {
+            document.getElementById('section-notice-form-modal').classList.remove('open');
+            editingSectionNoticeId = null;
+            editingSectionNoticeSection = null;
+        };
+
+        window.submitSectionNotice = async () => {
+            if(!window.canWriteSectionNotice()) return window.showToast("권한이 없어요.", 'error');
+            const content = document.getElementById('section-notice-textarea').value.trim();
+            if(!content) return window.showToast("내용을 입력해주세요.", 'error');
+            const section = editingSectionNoticeSection;
+            if(!section) return;
+            const btn = document.getElementById('section-notice-submit-btn');
+            btn.disabled=true; btn.innerText="저장 중...";
+            try {
+                const data = {
+                    content, writerName: '호성쌤',
+                    date: new Date().toLocaleDateString('ko-KR'),
+                    time: new Date().toLocaleString('ko-KR')
+                };
+                if(editingSectionNoticeId) {
+                    await update(ref(db,`class306/sectionNotices/${section}/${editingSectionNoticeId}`), data);
+                    window.showToast("수정되었습니다.");
+                } else {
+                    await push(ref(db,`class306/sectionNotices/${section}`), data);
+                    window.showToast("공지가 등록되었습니다! 📌");
+                }
+                window.closeSectionNoticeForm();
+            } catch(e){ window.showToast("오류가 발생했어요.", 'error'); }
+            finally{ btn.disabled=false; btn.innerText="저장"; }
+        };
+
+        window.deleteSectionNotice = async (section, id) => {
+            if(!window.canWriteSectionNotice()) return window.showToast("삭제 권한이 없어요.", 'error');
+            if(!confirm("이 공지를 삭제할까요?")) return;
+            await remove(ref(db,`class306/sectionNotices/${section}/${id}`));
+            window.showToast("삭제되었습니다.");
+        };
+        // ── 캘린더 ──
         function renderHome(calObj) {
             const today = new Date();
             const diffStart = Math.floor((today-startDate)/(1000*60*60*24))+1;
@@ -356,46 +552,31 @@
                     ${isAssessment ? `<span class="cal-assessment-badge">${c.assessmentSubject||'수행평가'}</span>` : ''}
                     ${isClickable ? `<span class="cal-arrow">›</span>` : ''}
                 `;
-                if(isClickable) {
-                    row.addEventListener('click', () => openCalModal(c));
-                }
+                if(isClickable) row.addEventListener('click', () => openCalModal(c));
                 container.appendChild(row);
             });
         }
 
-        // [수정 3] 일정 상세 모달 열기
         window.openCalModal = (c) => {
             const modal = document.getElementById('cal-detail-modal');
             document.getElementById('cal-modal-date').innerText = c.date;
             document.getElementById('cal-modal-title').innerText = c.title;
             const descEl = document.getElementById('cal-modal-desc');
-            if(c.description && c.description.trim()) {
-                descEl.innerText = c.description;
-                descEl.style.display = 'block';
-            } else {
-                descEl.style.display = 'none';
-            }
-            // [수정 4] 수행평가인 경우 연결 버튼 표시
+            if(c.description && c.description.trim()) { descEl.innerText = c.description; descEl.style.display = 'block'; }
+            else descEl.style.display = 'none';
             const linkBtn = document.getElementById('cal-modal-notice-btn');
             if(c.isAssessment && c.assessmentSubject) {
                 linkBtn.style.display = 'block';
                 linkBtn.onclick = () => {
-                    window.closeCalModal();
-                    window.showSection('notice');
-                    // 해당 과목 탭 선택
+                    window.closeCalModal(); window.showSection('notice');
                     setTimeout(() => {
-                        const btns = document.querySelectorAll('.notice-subject-btn');
-                        btns.forEach(b => {
-                            if(b.innerText.trim() === c.assessmentSubject) {
-                                window.selectNoticeSubject(b, c.assessmentSubject);
-                            }
+                        document.querySelectorAll('.notice-subject-btn').forEach(b => {
+                            if(b.innerText.trim() === c.assessmentSubject) window.selectNoticeSubject(b, c.assessmentSubject);
                         });
                     }, 100);
                 };
                 linkBtn.innerText = `📋 ${c.assessmentSubject} 평가 안내 보기`;
-            } else {
-                linkBtn.style.display = 'none';
-            }
+            } else linkBtn.style.display = 'none';
             modal.classList.add('open');
         };
         window.closeCalModal = () => { document.getElementById('cal-detail-modal').classList.remove('open'); };
@@ -480,13 +661,39 @@
             }
         };
 
+        // ★ 칭찬감옥: 같은 대상에게 월 1회만 가능
         window.submitPraise = () => {
             if(!currentUser) return window.showToast("로그인이 필요합니다.", 'error');
-            const from=currentUser.name, to=document.getElementById('p-to').value, date=document.getElementById('p-date').value, when=document.getElementById('p-when').value.trim(), where=document.getElementById('p-where').value.trim(), content=document.getElementById('p-content').value.trim();
+            const from=currentUser.name, to=document.getElementById('p-to').value,
+                  date=document.getElementById('p-date').value,
+                  when=document.getElementById('p-when').value.trim(),
+                  where=document.getElementById('p-where').value.trim(),
+                  content=document.getElementById('p-content').value.trim();
             if(!to||!date||!when||!where||!content) return window.showToast("모든 항목을 입력해주세요.", 'error');
             if(from===to) return window.showToast("자기 자신은 칭찬할 수 없어요!", 'error');
             const contentNoSpace = content.replace(/\s/g,'');
             if(contentNoSpace.length < 30) return window.showToast(`칭찬 내용을 공백 제외 30자 이상 작성해주세요! (현재 ${contentNoSpace.length}자)`, 'error');
+
+            // 월 1회 제한 - 선택한 칭찬 날짜(p-date) 기준으로 확인
+            const selectedDate = new Date(date);
+            const targetYearMonth = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2,'0')}`;
+            const praiseAll = globalData.praise || {};
+            const alreadyThisMonth = Object.values(praiseAll).some(p => {
+                if(p.from !== from || p.to !== to) return false;
+                if(p.date && p.date.length >= 7) {
+                    return p.date.slice(0,7) === targetYearMonth;
+                }
+                const parsed = new Date(p.time || '');
+                if(!isNaN(parsed.getTime())) {
+                    const ym = `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}`;
+                    return ym === targetYearMonth;
+                }
+                return false;
+            });
+            if(alreadyThisMonth) {
+                return window.showToast(`${targetYearMonth.replace('-','년 ')}월에 이미 ${to} 학생을 칭찬했어요! 😊`, 'error');
+            }
+
             push(ref(db,'class306/praise'),{from,to,date,when,where,content,approved:false,time:new Date().toLocaleString('ko-KR')});
             ['p-to','p-date','p-when','p-where','p-content'].forEach(id=>document.getElementById(id).value='');
             updateCharCount('p-content','p-content-count',30);
@@ -573,7 +780,6 @@
             if(!file) return window.showToast("사진을 선택해주세요.",'error');
             if(!studyContent) return window.showToast("무엇을 공부했는지 입력해주세요.",'error');
             if(getTodayCertCount(name)>=1) return window.showToast("오늘은 이미 체크했어요! 내일 또 해요 😊",'error');
-            // ★ 시간 제한: 평일 15:00~24:00 / 주말·공휴일 06:00~24:00
             if(!currentUser.isTest) {
                 const now = new Date();
                 const hour = now.getHours();
@@ -637,18 +843,10 @@
                 items.forEach(c=>container.innerHTML+=`
                 <div class="cert-row ${c.result}">
                     <span class="cert-emoji">${c.emoji||(c.result==='pass'?'✅':'❌')}</span>
-                    <div class="cert-info">
-                        <b>${c.name}</b>
-                        ${c.studyContent?`<span class="cert-subject">"${c.studyContent}"</span>`:''}
-                        <span class="cert-reason">${c.reason}</span>
-                    </div>
-
+                    <div class="cert-info"><b>${c.name}</b>${c.studyContent?`<span class="cert-subject">"${c.studyContent}"</span>`:''}<span class="cert-reason">${c.reason}</span></div>
                 </div>`);
             });
         };
-
-        // ── 평가 안내 ──────────────────────────────────────────────────────────
-        const NOTICE_SUBJECTS = ['전체','국어','영어','수학','사회','역사','과학','정보','음악','미술','체육','정기시험'];
 
         window.selectNoticeSubject = (btn, subject) => {
             document.querySelectorAll('.notice-subject-btn').forEach(b=>b.classList.remove('active'));
@@ -667,17 +865,11 @@
                 const canEdit = currentUser && (currentUser.isTest || currentUser.num === n.writerNum);
                 container.innerHTML+=`
                 <div class="notice-card" id="notice-card-${id}">
-                    <div class="notice-card-header">
-                        <span class="notice-subject-tag">${n.subject}</span>
-                        <span class="notice-date">${n.date||''}</span>
-                    </div>
+                    <div class="notice-card-header"><span class="notice-subject-tag">${n.subject}</span><span class="notice-date">${n.date||''}</span></div>
                     <div class="notice-title">${n.title}</div>
                     <div class="notice-writer">✏️ ${n.writerName}</div>
                     ${n.photoURL?`<img src="${n.photoURL}" class="notice-photo" alt="수행평가 안내" onclick="window.openPhotoModal('${n.photoURL}')">`:''}
-                    ${canEdit?`<div class="notice-actions">
-                        <button class="btn-notice-edit" onclick="window.openNoticeEdit('${id}')">수정</button>
-                        <button class="btn-notice-del" onclick="window.deleteNotice('${id}')">삭제</button>
-                    </div>`:''}
+                    ${canEdit?`<div class="notice-actions"><button class="btn-notice-edit" onclick="window.openNoticeEdit('${id}')">수정</button><button class="btn-notice-del" onclick="window.deleteNotice('${id}')">삭제</button></div>`:''}
                 </div>`;
             });
         }
@@ -702,21 +894,12 @@
             document.getElementById('notice-title-input').value = n.title||'';
             document.getElementById('notice-subject-select').value = n.subject||'국어';
             document.getElementById('notice-img-input').value='';
-            if(n.photoURL){
-                document.getElementById('notice-img-preview').src=n.photoURL;
-                document.getElementById('notice-img-preview').style.display='block';
-                document.getElementById('notice-img-placeholder').style.display='none';
-            } else {
-                document.getElementById('notice-img-preview').style.display='none';
-                document.getElementById('notice-img-placeholder').style.display='flex';
-            }
+            if(n.photoURL){ document.getElementById('notice-img-preview').src=n.photoURL; document.getElementById('notice-img-preview').style.display='block'; document.getElementById('notice-img-placeholder').style.display='none'; }
+            else { document.getElementById('notice-img-preview').style.display='none'; document.getElementById('notice-img-placeholder').style.display='flex'; }
             document.getElementById('notice-form-modal').classList.add('open');
         };
 
-        window.closeNoticeForm = () => {
-            document.getElementById('notice-form-modal').classList.remove('open');
-            editingNoticeId = null;
-        };
+        window.closeNoticeForm = () => { document.getElementById('notice-form-modal').classList.remove('open'); editingNoticeId = null; };
 
         window.submitNotice = async () => {
             if(!window.canWriteNotice()) return window.showToast("권한이 없어요.", 'error');
@@ -728,29 +911,11 @@
             btn.disabled=true; btn.innerText="저장 중...";
             try {
                 let photoURL = '';
-                if(editingNoticeId && globalData.notices?.[editingNoticeId]?.photoURL && !file){
-                    photoURL = globalData.notices[editingNoticeId].photoURL;
-                }
-                if(file){
-                    const ext=file.name.split('.').pop()||'jpg';
-                    const storageRef=sRef(storage,`notices/${Date.now()}.${ext}`);
-                    await uploadBytes(storageRef,file);
-                    photoURL=await getDownloadURL(storageRef);
-                }
-                const data = {
-                    title, subject, photoURL,
-                    writerName: currentUser.name,
-                    writerNum: currentUser.num,
-                    date: new Date().toLocaleDateString('ko-KR'),
-                    time: new Date().toLocaleString('ko-KR')
-                };
-                if(editingNoticeId){
-                    await update(ref(db,`class306/notices/${editingNoticeId}`), data);
-                    window.showToast("수정되었습니다.");
-                } else {
-                    await push(ref(db,'class306/notices'), data);
-                    window.showToast("등록되었습니다! 📋");
-                }
+                if(editingNoticeId && globalData.notices?.[editingNoticeId]?.photoURL && !file) photoURL = globalData.notices[editingNoticeId].photoURL;
+                if(file){ const ext=file.name.split('.').pop()||'jpg'; const storageRef=sRef(storage,`notices/${Date.now()}.${ext}`); await uploadBytes(storageRef,file); photoURL=await getDownloadURL(storageRef); }
+                const data = { title, subject, photoURL, writerName: currentUser.name, writerNum: currentUser.num, date: new Date().toLocaleDateString('ko-KR'), time: new Date().toLocaleString('ko-KR') };
+                if(editingNoticeId){ await update(ref(db,`class306/notices/${editingNoticeId}`), data); window.showToast("수정되었습니다."); }
+                else { await push(ref(db,'class306/notices'), data); window.showToast("등록되었습니다! 📋"); }
                 window.closeNoticeForm();
             } catch(e){ window.showToast("오류가 발생했어요.", 'error'); }
             finally{ btn.disabled=false; btn.innerText="저장"; }
@@ -760,56 +925,44 @@
             const n = globalData.notices?.[id]; if(!n) return;
             if(!currentUser || (!currentUser.isTest && currentUser.num !== n.writerNum)) return window.showToast("삭제 권한이 없어요.", 'error');
             if(!confirm("이 평가 안내를 삭제할까요?")) return;
-            await remove(ref(db,`class306/notices/${id}`));
-            window.showToast("삭제되었습니다.");
+            await remove(ref(db,`class306/notices/${id}`)); window.showToast("삭제되었습니다.");
         };
 
-        window.openPhotoModal = (url) => {
-            document.getElementById('photo-modal-img').src = url;
-            document.getElementById('photo-modal').classList.add('open');
-        };
+        window.openPhotoModal = (url) => { document.getElementById('photo-modal-img').src = url; document.getElementById('photo-modal').classList.add('open'); };
         window.closePhotoModal = () => { document.getElementById('photo-modal').classList.remove('open'); };
 
-        // ── 선생님 전용: 칭찬감옥 수정/삭제 ──────────────────────
         window.openPraiseEdit = (id) => {
-            const p = Object.entries(globalData.praise||{}).find(([k])=>k===id)?.[1];
-            if(!p) return;
+            const p = Object.entries(globalData.praise||{}).find(([k])=>k===id)?.[1]; if(!p) return;
             document.getElementById('edit-modal-title').innerText = '칭찬 내용 수정';
             document.getElementById('edit-modal-textarea').value = p.content;
             document.getElementById('edit-modal-save').onclick = async () => {
                 const newContent = document.getElementById('edit-modal-textarea').value.trim();
                 if(!newContent) return window.showToast("내용을 입력해주세요.", 'error');
                 await update(ref(db,`class306/praise/${id}`), {content: newContent});
-                window.closeEditModal();
-                window.showToast("수정되었습니다.");
+                window.closeEditModal(); window.showToast("수정되었습니다.");
             };
             document.getElementById('edit-modal').classList.add('open');
         };
         window.deletePraiseItem = async (id) => {
             if(!confirm("이 칭찬 내용을 삭제할까요?")) return;
-            await remove(ref(db,`class306/praise/${id}`));
-            window.showToast("삭제되었습니다.");
+            await remove(ref(db,`class306/praise/${id}`)); window.showToast("삭제되었습니다.");
         };
 
-        // ── 선생님 전용: 오늘하루 수정/삭제 ──────────────────────
         window.openTodayEdit = (id) => {
-            const i = globalData.impression?.[id];
-            if(!i) return;
+            const i = globalData.impression?.[id]; if(!i) return;
             document.getElementById('edit-modal-title').innerText = '오늘하루 내용 수정';
             document.getElementById('edit-modal-textarea').value = i.content;
             document.getElementById('edit-modal-save').onclick = async () => {
                 const newContent = document.getElementById('edit-modal-textarea').value.trim();
                 if(!newContent) return window.showToast("내용을 입력해주세요.", 'error');
                 await update(ref(db,`class306/impression/${id}`), {content: newContent});
-                window.closeEditModal();
-                window.showToast("수정되었습니다.");
+                window.closeEditModal(); window.showToast("수정되었습니다.");
             };
             document.getElementById('edit-modal').classList.add('open');
         };
         window.deleteTodayItem = async (id, name) => {
             if(!confirm(`${name}의 오늘하루 기록을 삭제할까요?`)) return;
-            await remove(ref(db,`class306/impression/${id}`));
-            window.showToast("삭제되었습니다.");
+            await remove(ref(db,`class306/impression/${id}`)); window.showToast("삭제되었습니다.");
         };
 
         window.closeEditModal = () => { document.getElementById('edit-modal').classList.remove('open'); };
@@ -817,9 +970,7 @@
         function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});}
 
         function updateCharCount(textareaId, countId, minLen) {
-            const ta = document.getElementById(textareaId);
-            const cnt = document.getElementById(countId);
-            if(!ta||!cnt) return;
+            const ta = document.getElementById(textareaId); const cnt = document.getElementById(countId); if(!ta||!cnt) return;
             const len = ta.value.replace(/\s/g,'').length;
             cnt.innerText = `${len}/${minLen}자 (공백 제외)`;
             cnt.style.color = len >= minLen ? 'var(--green)' : 'var(--ink-mute)';
@@ -830,260 +981,141 @@
 
         updateNavUI();
     </script>
-
     <style>
         :root {
-            --primary: #533afd;
-            --primary-deep: #4434d4;
-            --primary-soft: #665efd;
-            --primary-subdued: #eeedff;
-            --brand-dark: #1c1e54;
-            --ink: #0d253d;
-            --ink-secondary: #273951;
-            --ink-mute: #64748d;
-            --on-primary: #ffffff;
-            --canvas: #ffffff;
-            --canvas-soft: #f6f9fc;
-            --canvas-cream: #f5e9d4;
-            --hairline: #e3e8ee;
-            --hairline-input: #a8c3de;
-            --green: #1a7f5a; --green-bg: #e6f6f0;
-            --red: #c0392b;   --red-bg: #fdf0ef;
-            --study: #6366F1; --study-bg: #eef2ff;
-            --notice: #d97706; --notice-bg: #fef3c7;
+            --primary: #533afd; --primary-deep: #4434d4; --primary-soft: #665efd; --primary-subdued: #eeedff;
+            --ink: #0d253d; --ink-secondary: #273951; --ink-mute: #64748d;
+            --canvas: #ffffff; --canvas-soft: #f6f9fc; --canvas-cream: #f5e9d4;
+            --hairline: #e3e8ee; --hairline-input: #a8c3de;
+            --green: #1a7f5a; --green-bg: #e6f6f0; --red: #c0392b; --red-bg: #fdf0ef;
+            --study: #6366F1; --study-bg: #eef2ff; --notice: #d97706; --notice-bg: #fef3c7;
             --shadow-1: rgba(0,55,112,0.07) 0 1px 3px;
             --shadow-2: rgba(0,55,112,0.08) 0 8px 24px, rgba(0,55,112,0.04) 0 2px 6px;
-            --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 20px; --pill: 9999px;
+            --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --pill: 9999px;
             --max-w: 680px;
         }
-
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 15px; font-weight: 300; line-height: 1.6; color: var(--ink); background: var(--canvas-soft); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding-bottom: 80px; }
 
-        body {
-            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 15px; font-weight: 300; line-height: 1.6;
-            color: var(--ink); background: var(--canvas-soft);
-            font-feature-settings: "ss01";
-            min-height: 100vh;
-            display: flex; flex-direction: column; align-items: center;
-            padding-bottom: 80px;
-        }
-
-        .site-hero {
-            width: 100%;
-            background: linear-gradient(135deg,
-                #fef3e2 0%, #fde8c8 10%,
-                #ede9ff 28%, #d4d0ff 44%,
-                #c7d2ff 56%, #a5b4fc 66%,
-                #fbc8d4 80%, #fecdd3 100%);
-            position: relative; overflow: hidden;
-            padding-bottom: 28px;
-        }
-        .site-hero::before {
-            content: '';
-            position: absolute; inset: 0;
-            background:
-                radial-gradient(ellipse 55% 80% at 15% 50%, rgba(83,58,253,0.14) 0%, transparent 70%),
-                radial-gradient(ellipse 45% 65% at 85% 30%, rgba(234,34,97,0.10) 0%, transparent 70%);
-            pointer-events: none;
-        }
-
-        .top-bar {
-            display: flex; align-items: center; justify-content: center;
-            gap: 10px; padding: 20px 16px 12px;
-            position: relative; z-index: 1; flex-wrap: wrap;
-            min-height: 52px;
-        }
-        .user-pill {
-            display: none; align-items: center; gap: 6px;
-            font-size: 13px; font-weight: 500; color: var(--ink-secondary);
-            background: rgba(255,255,255,0.75); backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.6);
-            padding: 6px 14px; border-radius: var(--pill);
-        }
-        .btn-logout, .btn-pw {
-            display: none; align-items: center; gap: 5px;
-            font-size: 13px; font-weight: 400; font-family: inherit;
-            color: var(--ink-mute); cursor: pointer;
-            background: rgba(255,255,255,0.65); backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.5);
-            padding: 6px 14px; border-radius: var(--pill);
-            transition: all 0.15s;
-        }
+        /* Hero */
+        .site-hero { width: 100%; background: linear-gradient(135deg, #fef3e2 0%, #fde8c8 10%, #ede9ff 28%, #d4d0ff 44%, #c7d2ff 56%, #a5b4fc 66%, #fbc8d4 80%, #fecdd3 100%); position: relative; overflow: hidden; padding-bottom: 28px; }
+        .site-hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 55% 80% at 15% 50%, rgba(83,58,253,0.14) 0%, transparent 70%), radial-gradient(ellipse 45% 65% at 85% 30%, rgba(234,34,97,0.10) 0%, transparent 70%); pointer-events: none; }
+        .top-bar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px 16px 12px; position: relative; z-index: 1; flex-wrap: wrap; min-height: 52px; }
+        .user-pill { display: none; align-items: center; font-size: 13px; font-weight: 500; color: var(--ink-secondary); background: rgba(255,255,255,0.75); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.6); padding: 6px 14px; border-radius: var(--pill); }
+        .btn-logout, .btn-pw { display: none; align-items: center; gap: 5px; font-size: 13px; font-family: inherit; color: var(--ink-mute); cursor: pointer; background: rgba(255,255,255,0.65); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.5); padding: 6px 14px; border-radius: var(--pill); transition: all 0.15s; }
         .btn-logout:hover, .btn-pw:hover { background: white; color: var(--ink); }
-
-        .site-title {
-            text-align: center; padding: 12px 16px 20px;
-            position: relative; z-index: 1;
-        }
-        .site-title h1 {
-            font-size: clamp(28px, 7vw, 48px);
-            font-weight: 300; letter-spacing: -1.4px;
-            color: var(--ink); line-height: 1.1;
-        }
+        .site-title { text-align: center; padding: 12px 16px 20px; position: relative; z-index: 1; }
+        .site-title h1 { font-size: clamp(28px, 7vw, 48px); font-weight: 300; letter-spacing: -1.4px; color: var(--ink); line-height: 1.1; }
         .site-title h1 span { color: var(--primary); }
-
-        .nav-wrap {
-            display: flex; justify-content: center;
-            padding: 0 16px; position: relative; z-index: 1;
-        }
-        nav {
-            display: flex; gap: 4px; flex-wrap: wrap; justify-content: center;
-            background: rgba(255,255,255,0.55); backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.6);
-            border-radius: var(--radius-lg); padding: 6px;
-            box-shadow: var(--shadow-1);
-            max-width: var(--max-w); width: 100%;
-        }
-        .nav-btn {
-            padding: 8px 16px; border: none;
-            border-radius: var(--radius-md);
-            background: transparent; font-family: inherit;
-            font-size: 13px; font-weight: 400;
-            color: var(--ink-secondary); cursor: pointer;
-            transition: all 0.15s; position: relative;
-            white-space: nowrap;
-        }
+        .nav-wrap { display: flex; justify-content: center; padding: 0 16px; position: relative; z-index: 1; }
+        nav { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; background: rgba(255,255,255,0.55); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.6); border-radius: var(--radius-lg); padding: 6px; box-shadow: var(--shadow-1); max-width: var(--max-w); width: 100%; }
+        .nav-btn { padding: 8px 16px; border: none; border-radius: var(--radius-md); background: transparent; font-family: inherit; font-size: 13px; font-weight: 400; color: var(--ink-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .nav-btn:hover { background: rgba(255,255,255,0.7); }
         .nav-btn.active { background: white; color: var(--ink); font-weight: 500; box-shadow: var(--shadow-1); }
-        /* [수정 2] 자물쇠 이모지 제거 - locked 상태는 색상만 흐리게 */
         .nav-btn.locked { color: #aab4c4; }
-
-        .login-area-below {
-            display: flex; justify-content: center; gap: 8px;
-            padding: 14px 16px 0; position: relative; z-index: 1;
-        }
-        .btn-login {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 9px 22px; background: var(--primary); color: white;
-            border: none; border-radius: var(--pill);
-            font-family: inherit; font-size: 14px; font-weight: 400;
-            cursor: pointer; transition: background 0.15s;
-        }
+        .login-area-below { display: flex; justify-content: center; gap: 8px; padding: 14px 16px 0; position: relative; z-index: 1; }
+        .btn-login { display: inline-flex; align-items: center; gap: 6px; padding: 9px 22px; background: var(--primary); color: white; border: none; border-radius: var(--pill); font-family: inherit; font-size: 14px; cursor: pointer; transition: background 0.15s; }
         .btn-login:hover { background: var(--primary-deep); }
-        .btn-login-admin {
-            background: rgba(255,255,255,0.7); color: var(--ink-secondary);
-            border: 1px solid rgba(255,255,255,0.6); backdrop-filter: blur(8px);
-        }
+        .btn-login-admin { background: rgba(255,255,255,0.7); color: var(--ink-secondary); border: 1px solid rgba(255,255,255,0.6); backdrop-filter: blur(8px); }
         .btn-login-admin:hover { background: white; color: var(--ink); }
 
-        .progress-banner {
-            width: calc(100% - 32px); max-width: var(--max-w);
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-soft) 100%);
-            color: white; padding: 18px 22px;
-            border-radius: var(--radius-lg); margin: 20px 0;
-            box-shadow: var(--shadow-2);
-        }
+        /* Progress */
+        .progress-banner { width: calc(100% - 32px); max-width: var(--max-w); background: linear-gradient(135deg, var(--primary) 0%, var(--primary-soft) 100%); color: white; padding: 18px 22px; border-radius: var(--radius-lg); margin: 20px 0; box-shadow: var(--shadow-2); }
         .progress-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .progress-label { font-size: 13px; font-weight: 500; letter-spacing: -0.1px; }
+        .progress-label { font-size: 13px; font-weight: 500; }
         .progress-value { font-size: 14px; font-weight: 500; font-feature-settings: 'tnum'; }
         .progress-track { background: rgba(255,255,255,0.25); height: 6px; border-radius: 3px; overflow: hidden; }
         .progress-fill { background: white; height: 100%; width: 0%; transition: width 1.2s ease; border-radius: 3px; }
 
+        /* Layout */
         .content-section { display: none; width: calc(100% - 32px); max-width: var(--max-w); animation: fadeUp 0.25s ease; }
         .content-section.active { display: block; }
-
-        .card {
-            background: var(--canvas); border: 1px solid var(--hairline);
-            border-radius: var(--radius-lg); box-shadow: var(--shadow-1);
-            margin-bottom: 16px; overflow: hidden;
-        }
+        .card { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); margin-bottom: 16px; overflow: hidden; }
         .card-pad { padding: 22px 24px; }
-        .card-divider { height: 1px; background: var(--hairline); }
         .card-title { font-size: 15px; font-weight: 600; color: var(--ink); letter-spacing: -0.2px; margin-bottom: 16px; }
-
-        .sub-nav {
-            display: flex; gap: 0; border-bottom: 1px solid var(--hairline);
-            padding: 0 24px; margin-bottom: 0;
-            justify-content: center;
-        }
-        .sub-nav button {
-            background: none; border: none; border-bottom: 2px solid transparent;
-            font-family: inherit; font-size: 14px; font-weight: 400;
-            color: var(--ink-mute); cursor: pointer;
-            padding: 14px 16px; transition: all 0.15s; margin-bottom: -1px;
-        }
+        .sub-nav { display: flex; border-bottom: 1px solid var(--hairline); padding: 0 24px; justify-content: center; }
+        .sub-nav button { background: none; border: none; border-bottom: 2px solid transparent; font-family: inherit; font-size: 14px; color: var(--ink-mute); cursor: pointer; padding: 14px 16px; transition: all 0.15s; margin-bottom: -1px; }
         .sub-nav button:hover { color: var(--ink); }
         .sub-nav button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
         .tab-content { display: none; } .tab-content.active { display: block; }
 
-        /* Home */
+        /* 홈 공지사항 */
+        .home-notice-section { margin-bottom: 20px; }
+        .home-notice-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .btn-home-notice-write { display: none; align-items: center; gap: 4px; padding: 5px 12px; background: white; color: var(--ink-mute); border: 1px solid var(--hairline); border-radius: var(--pill); font-family: inherit; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+        .btn-home-notice-write:hover { background: var(--canvas-soft); color: var(--ink); }
+        .home-notice-item { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 8px; }
+        .home-notice-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        .home-notice-badge { font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; padding: 2px 8px; border-radius: var(--pill); }
+        .home-notice-date { font-size: 12px; color: var(--ink-mute); }
+        .home-notice-actions { display: flex; gap: 6px; margin-left: auto; }
+        .btn-hnotice-edit, .btn-hnotice-del { padding: 3px 10px; border-radius: var(--pill); font-family: inherit; font-size: 11px; cursor: pointer; border: none; }
+        .btn-hnotice-edit { background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); }
+        .btn-hnotice-edit:hover { background: var(--hairline); }
+        .btn-hnotice-del { background: var(--red-bg); color: var(--red); }
+        .btn-hnotice-del:hover { background: #fbd5d1; }
+        .home-notice-content { font-size: 14px; color: var(--ink-secondary); line-height: 1.7; margin-bottom: 6px; }
+        .home-notice-writer { font-size: 11px; color: var(--ink-mute); }
+
+        /* 섹션 선생님 공지 */
+        .section-notice-wrap { background: #f0f9ff; border: 1px solid #bae6fd; border-left: 3px solid #38bdf8; border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 16px; display: none; }
+        .section-notice-top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .section-notice-top-label { font-size: 11px; font-weight: 600; color: #0369a1; }
+        .btn-snotice-write { display: none; align-items: center; gap: 4px; padding: 4px 12px; background: white; color: #0369a1; border: 1px solid #bae6fd; border-radius: var(--pill); font-family: inherit; font-size: 11px; cursor: pointer; }
+        .btn-snotice-write:hover { background: #e0f2fe; }
+        .section-notice-item { margin-top: 6px; }
+        .section-notice-item + .section-notice-item { margin-top: 10px; padding-top: 10px; border-top: 1px solid #bae6fd; }
+        .section-notice-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+        .section-notice-label { font-size: 11px; font-weight: 600; color: #0369a1; background: #e0f2fe; padding: 2px 8px; border-radius: var(--pill); }
+        .section-notice-date { font-size: 11px; color: var(--ink-mute); }
+        .section-notice-content { font-size: 13px; color: #0c4a6e; line-height: 1.7; }
+        .btn-snotice-edit, .btn-snotice-del { padding: 2px 8px; border-radius: var(--pill); font-family: inherit; font-size: 11px; cursor: pointer; border: none; }
+        .btn-snotice-edit { background: white; color: var(--ink-secondary); border: 1px solid var(--hairline); }
+        .btn-snotice-del { background: var(--red-bg); color: var(--red); }
+
+        /* 공지 폼 모달 박스 */
+        .notice-form-modal-box { background: white; border-radius: 20px; padding: 32px 28px; max-width: 440px; width: 94%; box-shadow: var(--shadow-2); text-align: left; }
+        .notice-form-modal-box h2 { font-size: 18px; font-weight: 500; color: var(--ink); margin-bottom: 16px; }
+
+        /* Home calendar */
         .dday-row { display: flex; justify-content: space-around; padding: 20px 0; border-bottom: 1px solid var(--hairline); margin-bottom: 20px; }
         .dday-item { text-align: center; }
         .dday-num { font-size: 36px; font-weight: 300; color: var(--primary); letter-spacing: -1px; font-feature-settings: 'tnum'; }
         .dday-label { font-size: 12px; color: var(--ink-mute); margin-top: 2px; }
-        .cal-section-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--ink-mute); margin-bottom: 12px; }
+        .cal-section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--ink-mute); margin-bottom: 12px; }
         .cal-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hairline); }
         .cal-row:last-child { border-bottom: none; }
-        /* [수정 3] 클릭 가능한 캘린더 행 */
-        .cal-row-clickable {
-            cursor: pointer; border-radius: var(--radius-sm);
-            transition: background 0.15s;
-            padding: 11px 8px; margin: 0 -8px;
-        }
-        .cal-row-clickable:hover { background: var(--primary-subdued); }
-        .cal-tag { font-size: 12px; font-weight: 500; color: var(--primary); background: var(--primary-subdued); padding: 3px 10px; border-radius: var(--pill); white-space: nowrap; font-feature-settings: 'tnum'; }
+        .cal-row-clickable { cursor: pointer; border-radius: var(--radius-sm); transition: background 0.15s; padding: 11px 8px; margin: 0 -8px; }
+        .cal-row-clickable:hover { background: var(--primary-subdued, #eeedff); }
+        .cal-tag { font-size: 12px; font-weight: 500; color: var(--primary); background: #eeedff; padding: 3px 10px; border-radius: var(--pill); white-space: nowrap; font-feature-settings: 'tnum'; }
         .cal-title { font-size: 14px; color: var(--ink-secondary); flex: 1; }
-        /* [수정 4] 수행평가 배지 */
-        .cal-assessment-badge {
-            font-size: 11px; font-weight: 600;
-            background: var(--notice-bg); color: var(--notice);
-            padding: 2px 8px; border-radius: var(--pill);
-            white-space: nowrap; flex-shrink: 0;
-        }
+        .cal-assessment-badge { font-size: 11px; font-weight: 600; background: var(--notice-bg); color: var(--notice); padding: 2px 8px; border-radius: var(--pill); white-space: nowrap; flex-shrink: 0; }
         .cal-arrow { font-size: 16px; color: var(--ink-mute); flex-shrink: 0; }
 
-        /* [수정 3] 일정 상세 모달 */
-        .cal-modal-box {
-            background: white; border-radius: 20px; padding: 32px 28px;
-            max-width: 400px; width: 92%; box-shadow: var(--shadow-2);
-            text-align: left;
-        }
-        .cal-modal-date { font-size: 12px; font-weight: 500; color: var(--primary); background: var(--primary-subdued); padding: 4px 12px; border-radius: var(--pill); display: inline-block; margin-bottom: 12px; font-feature-settings: 'tnum'; }
+        /* Cal modal */
+        .cal-modal-box { background: white; border-radius: 20px; padding: 32px 28px; max-width: 400px; width: 92%; box-shadow: var(--shadow-2); text-align: left; }
+        .cal-modal-date { font-size: 12px; font-weight: 500; color: var(--primary); background: #eeedff; padding: 4px 12px; border-radius: var(--pill); display: inline-block; margin-bottom: 12px; }
         .cal-modal-title-text { font-size: 18px; font-weight: 500; color: var(--ink); letter-spacing: -0.3px; margin-bottom: 16px; line-height: 1.4; }
         .cal-modal-desc { font-size: 14px; color: var(--ink-secondary); line-height: 1.7; background: var(--canvas-soft); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 16px; white-space: pre-wrap; }
-        .cal-modal-notice-btn {
-            display: none; width: 100%; padding: 12px;
-            background: var(--notice); color: white; border: none;
-            border-radius: var(--pill); font-family: inherit;
-            font-size: 14px; font-weight: 400; cursor: pointer;
-            margin-bottom: 10px; transition: background 0.15s;
-        }
+        .cal-modal-notice-btn { display: none; width: 100%; padding: 12px; background: var(--notice); color: white; border: none; border-radius: var(--pill); font-family: inherit; font-size: 14px; cursor: pointer; margin-bottom: 10px; transition: background 0.15s; }
         .cal-modal-notice-btn:hover { background: #b45309; }
-        .cal-modal-close-btn {
-            width: 100%; padding: 11px; border: 1px solid var(--hairline);
-            border-radius: var(--pill); background: white; color: var(--ink-mute);
-            font-family: inherit; font-size: 13px; cursor: pointer;
-        }
+        .cal-modal-close-btn { width: 100%; padding: 11px; border: 1px solid var(--hairline); border-radius: var(--pill); background: white; color: var(--ink-mute); font-family: inherit; font-size: 13px; cursor: pointer; }
 
-        /* [수정 1] 자동로그인 체크박스 */
-        .auto-login-row {
-            display: flex; align-items: center; gap: 8px;
-            margin-bottom: 16px; cursor: pointer;
-        }
-        .auto-login-row input[type="checkbox"] {
-            width: 16px; height: 16px; accent-color: var(--primary);
-            cursor: pointer; margin: 0; flex-shrink: 0;
-        }
-        .auto-login-label {
-            font-size: 13px; color: var(--ink-mute); cursor: pointer; user-select: none;
-        }
+        /* Auto login */
+        .auto-login-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; }
+        .auto-login-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; margin: 0; flex-shrink: 0; }
+        .auto-login-label { font-size: 13px; color: var(--ink-mute); cursor: pointer; user-select: none; }
 
         /* Mileage rank */
         .rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-        .rank-card {
-            background: var(--canvas-soft); border: 1px solid var(--hairline);
-            border-radius: var(--radius-md); padding: 14px 10px;
-            display: flex; flex-direction: column; align-items: center; gap: 5px;
-            transition: box-shadow 0.15s;
-        }
+        .rank-card { background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 5px; }
         .rank-card.rank-top { background: white; border-color: var(--primary); box-shadow: var(--shadow-1); }
         .rank-card.rank-self { border-color: #f472b6; box-shadow: 0 0 0 2px rgba(244,114,182,0.15); }
         .rank-medal { font-size: 18px; }
         .rank-name { font-size: 13px; font-weight: 500; color: var(--ink); display: flex; align-items: center; gap: 4px; }
         .me-badge { font-size: 10px; font-weight: 600; color: white; background: #f472b6; padding: 1px 6px; border-radius: var(--pill); }
         .rank-lv { font-size: 11px; font-weight: 500; border: 1.5px solid; border-radius: var(--pill); padding: 2px 8px; }
-        .rank-score { font-size: 16px; font-weight: 300; color: var(--primary); letter-spacing: -0.5px; font-feature-settings: 'tnum'; }
+        .rank-score { font-size: 16px; font-weight: 300; color: var(--primary); font-feature-settings: 'tnum'; }
         .rank-score span { font-size: 11px; color: var(--ink-mute); }
         .rank-bar-wrap { width: 100%; height: 4px; background: var(--hairline); border-radius: 2px; }
         .rank-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
@@ -1092,59 +1124,49 @@
         /* Guide */
         .guide-group { margin-bottom: 20px; }
         .guide-label { font-size: 12px; font-weight: 500; color: var(--ink-mute); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.6px; }
-        .guide-box { border-left: 3px solid var(--primary); background: var(--primary-subdued); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 12px 16px; }
+        .guide-box { border-left: 3px solid var(--primary); background: #eeedff; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 12px 16px; }
         .guide-box.warm { background: var(--canvas-cream); border-left-color: #d97706; }
         .guide-box.cool { background: #f0f9ff; border-left-color: #38bdf8; }
         .guide-line { font-size: 13px; color: var(--ink-secondary); padding: 2px 0; }
 
-        /* Lock notice */
+        /* Lock */
         .lock-notice { text-align: center; padding: 52px 24px; }
         .lock-icon { font-size: 2.5rem; margin-bottom: 14px; }
-        .lock-notice h3 { font-size: 17px; font-weight: 500; color: var(--ink); margin-bottom: 8px; letter-spacing: -0.3px; }
+        .lock-notice h3 { font-size: 17px; font-weight: 500; color: var(--ink); margin-bottom: 8px; }
         .lock-notice p { font-size: 14px; color: var(--ink-mute); margin-bottom: 20px; line-height: 1.7; }
-        .btn-lock-login { padding: 10px 28px; background: var(--primary); color: white; border: none; border-radius: var(--pill); font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: background 0.15s; }
+        .btn-lock-login { padding: 10px 28px; background: var(--primary); color: white; border: none; border-radius: var(--pill); font-family: inherit; font-size: 14px; cursor: pointer; }
         .btn-lock-login:hover { background: var(--primary-deep); }
 
         /* Praise */
         .praise-card { background: var(--canvas-soft); border: 1px solid var(--hairline); border-left: 3px solid var(--primary); border-radius: var(--radius-md); padding: 16px; margin-bottom: 10px; }
         .praise-header { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
-        .praise-date-badge {
-            display: inline-block; font-size: 11px; font-weight: 600;
-            color: var(--primary); background: var(--primary-subdued);
-            padding: 2px 10px; border-radius: var(--pill);
-            margin-bottom: 6px; font-feature-settings: 'tnum';
-        }
+        .praise-date-badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--primary); background: #eeedff; padding: 2px 10px; border-radius: var(--pill); margin-bottom: 6px; }
         .praise-meta { font-size: 12px; color: var(--ink-mute); margin-bottom: 8px; }
         .praise-body { font-size: 14px; color: var(--ink-secondary); margin: 4px 0; }
         .praise-from { font-size: 12px; color: var(--ink-mute); }
+        .praise-limit-notice { background: #fef3c7; border: 1px solid #fde68a; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 12px; color: #92400e; margin-bottom: 12px; }
 
         /* Char count */
         .char-count { font-size: 12px; color: var(--ink-mute); text-align: right; margin-top: -8px; margin-bottom: 12px; transition: color 0.2s; }
 
         /* Study cert */
-        .upload-area {
-            border: 1.5px dashed var(--hairline-input); border-radius: var(--radius-lg);
-            background: var(--canvas-soft); min-height: 180px;
-            display: flex; align-items: center; justify-content: center;
-            margin-bottom: 14px; cursor: pointer; overflow: hidden;
-            transition: border-color 0.15s;
-        }
+        .upload-area { border: 1.5px dashed var(--hairline-input); border-radius: var(--radius-lg); background: var(--canvas-soft); min-height: 180px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; cursor: pointer; overflow: hidden; transition: border-color 0.15s; }
         .upload-area:hover { border-color: var(--primary); }
         #cert-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; }
         #cert-placeholder span { font-size: 13px; color: var(--ink-mute); }
         #cert-placeholder small { font-size: 12px; color: var(--ink-mute); opacity: 0.7; }
         #cert-preview { display: none; width: 100%; max-height: 280px; object-fit: contain; border-radius: var(--radius-md); }
         .cert-btn-row { display: flex; gap: 8px; margin-bottom: 14px; }
-        .btn-cam { flex: 1; padding: 11px; border: none; border-radius: var(--pill); background: var(--study); color: white; font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; }
-        .btn-gallery { flex: 1; padding: 11px; border: 1px solid var(--study); border-radius: var(--pill); background: white; color: var(--study); font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; }
+        .btn-cam { flex: 1; padding: 11px; border: none; border-radius: var(--pill); background: var(--study); color: white; font-family: inherit; font-size: 13px; cursor: pointer; }
+        .btn-gallery { flex: 1; padding: 11px; border: 1px solid var(--study); border-radius: var(--pill); background: white; color: var(--study); font-family: inherit; font-size: 13px; cursor: pointer; }
         .cert-info-tag { background: var(--study-bg); color: var(--study); font-size: 12px; font-weight: 500; padding: 8px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; text-align: center; }
-        .btn-cert-main { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--study); color: white; font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; margin-top: 4px; transition: opacity 0.15s; }
+        .btn-cert-main { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--study); color: white; font-family: inherit; font-size: 14px; cursor: pointer; margin-top: 4px; transition: opacity 0.15s; }
         .btn-cert-main:disabled { opacity: 0.5; cursor: not-allowed; }
         .cert-result-box { border-radius: var(--radius-lg); padding: 24px; text-align: center; margin-top: 16px; border: 1px solid var(--hairline); }
         .cert-result-box.pass { background: var(--green-bg); border-color: #a7f3d0; }
         .cert-result-box.fail { background: var(--red-bg); border-color: #fca5a5; }
         .cert-result-emoji { font-size: 2.5rem; display: block; margin-bottom: 8px; }
-        .cert-result-title { font-size: 18px; font-weight: 500; letter-spacing: -0.3px; margin-bottom: 6px; }
+        .cert-result-title { font-size: 18px; font-weight: 500; margin-bottom: 6px; }
         .cert-result-desc { font-size: 13px; color: var(--ink-mute); margin-bottom: 6px; }
         .cert-result-mileage { font-size: 13px; font-weight: 500; color: var(--study); }
 
@@ -1155,78 +1177,34 @@
         .cert-row.fail { border-left: 3px solid #fca5a5; padding-left: 12px; opacity: 0.75; }
         .cert-emoji { font-size: 18px; flex-shrink: 0; }
         .cert-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-        .cert-info b { font-size: 13px; font-weight: 500; color: var(--ink); }
+        .cert-info b { font-size: 13px; font-weight: 500; }
         .cert-subject { font-size: 12px; color: var(--study); font-weight: 500; }
         .cert-reason { font-size: 12px; color: var(--ink-mute); }
-        .cert-score { font-size: 13px; font-weight: 500; font-feature-settings: 'tnum'; white-space: nowrap; }
-        .score-pos { color: var(--green); }
-        .score-neg { color: var(--ink-mute); }
 
         /* 평가 안내 */
-        .notice-header-row {
-            display: flex; align-items: flex-start; justify-content: space-between;
-            margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
-        }
-        .notice-subject-scroll {
-            display: flex; gap: 6px; flex-wrap: wrap; flex: 1;
-        }
-        .notice-subject-btn {
-            padding: 6px 14px; border: 1px solid var(--hairline);
-            border-radius: var(--pill); background: var(--canvas);
-            font-family: inherit; font-size: 12px; font-weight: 400;
-            color: var(--ink-mute); cursor: pointer; white-space: nowrap;
-            transition: all 0.15s;
-        }
+        .notice-header-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        .notice-subject-scroll { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+        .notice-subject-btn { padding: 6px 14px; border: 1px solid var(--hairline); border-radius: var(--pill); background: var(--canvas); font-family: inherit; font-size: 12px; color: var(--ink-mute); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .notice-subject-btn:hover { background: var(--canvas-soft); }
         .notice-subject-btn.active { background: var(--notice); color: white; border-color: var(--notice); font-weight: 500; }
-        .btn-notice-write {
-            display: none; align-items: center; gap: 6px;
-            padding: 8px 18px; background: var(--notice); color: white;
-            border: none; border-radius: var(--pill);
-            font-family: inherit; font-size: 13px; font-weight: 400;
-            cursor: pointer; white-space: nowrap; transition: background 0.15s;
-            flex-shrink: 0;
-        }
+        .btn-notice-write { display: none; align-items: center; gap: 6px; padding: 8px 18px; background: var(--notice); color: white; border: none; border-radius: var(--pill); font-family: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
         .btn-notice-write:hover { background: #b45309; }
-        .notice-card {
-            background: var(--canvas); border: 1px solid var(--hairline);
-            border-left: 3px solid var(--notice);
-            border-radius: var(--radius-md); padding: 16px;
-            margin-bottom: 10px;
-        }
+        .notice-card { background: var(--canvas); border: 1px solid var(--hairline); border-left: 3px solid var(--notice); border-radius: var(--radius-md); padding: 16px; margin-bottom: 10px; }
         .notice-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-        .notice-subject-tag {
-            font-size: 11px; font-weight: 600;
-            background: var(--notice-bg); color: var(--notice);
-            padding: 3px 10px; border-radius: var(--pill);
-        }
+        .notice-subject-tag { font-size: 11px; font-weight: 600; background: var(--notice-bg); color: var(--notice); padding: 3px 10px; border-radius: var(--pill); }
         .notice-date { font-size: 12px; color: var(--ink-mute); }
         .notice-title { font-size: 15px; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
         .notice-writer { font-size: 12px; color: var(--ink-mute); margin-bottom: 10px; }
-        .notice-photo {
-            width: 100%; max-height: 320px; object-fit: contain;
-            border-radius: var(--radius-md); border: 1px solid var(--hairline);
-            cursor: zoom-in; margin-bottom: 10px;
-        }
+        .notice-photo { width: 100%; max-height: 320px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--hairline); cursor: zoom-in; margin-bottom: 10px; }
         .notice-actions { display: flex; gap: 8px; margin-top: 4px; }
-        .btn-notice-edit, .btn-notice-del {
-            padding: 5px 14px; border-radius: var(--pill);
-            font-family: inherit; font-size: 12px; font-weight: 400;
-            cursor: pointer; border: none; transition: all 0.15s;
-        }
+        .btn-notice-edit, .btn-notice-del { padding: 5px 14px; border-radius: var(--pill); font-family: inherit; font-size: 12px; cursor: pointer; border: none; transition: all 0.15s; }
         .btn-notice-edit { background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); }
         .btn-notice-edit:hover { background: var(--hairline); }
         .btn-notice-del { background: var(--red-bg); color: var(--red); }
         .btn-notice-del:hover { background: #fbd5d1; }
 
-        /* Notice upload area */
-        .notice-upload-area {
-            border: 1.5px dashed var(--hairline-input); border-radius: var(--radius-lg);
-            background: var(--canvas-soft); min-height: 140px;
-            display: flex; align-items: center; justify-content: center;
-            margin-bottom: 14px; cursor: pointer; overflow: hidden;
-            transition: border-color 0.15s;
-        }
+        /* Notice form upload */
+        .notice-upload-area { border: 1.5px dashed var(--hairline-input); border-radius: var(--radius-lg); background: var(--canvas-soft); min-height: 140px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; cursor: pointer; overflow: hidden; transition: border-color 0.15s; }
         .notice-upload-area:hover { border-color: var(--notice); }
         #notice-img-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 16px; }
         #notice-img-placeholder span { font-size: 13px; color: var(--ink-mute); }
@@ -1235,57 +1213,37 @@
         /* Common */
         .list-group-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.7px; color: var(--ink-mute); padding: 12px 0 8px; border-bottom: 1px solid var(--hairline); margin-bottom: 8px; }
         .sort-bar { display: flex; gap: 6px; margin-bottom: 16px; }
-        .sort-btn { padding: 6px 14px; border: 1px solid var(--hairline); border-radius: var(--pill); background: var(--canvas); font-family: inherit; font-size: 12px; font-weight: 400; color: var(--ink-mute); cursor: pointer; transition: all 0.15s; }
+        .sort-btn { padding: 6px 14px; border: 1px solid var(--hairline); border-radius: var(--pill); background: var(--canvas); font-family: inherit; font-size: 12px; color: var(--ink-mute); cursor: pointer; transition: all 0.15s; }
         .sort-btn.active { background: var(--ink); color: white; border-color: var(--ink); }
-
-        .q-box { background: var(--primary-subdued); border-radius: var(--radius-md); padding: 18px; margin-bottom: 18px; text-align: center; }
-        .q-box h4 { font-size: 15px; font-weight: 400; color: var(--primary-deep); letter-spacing: -0.2px; }
+        .q-box { background: #eeedff; border-radius: var(--radius-md); padding: 18px; margin-bottom: 18px; text-align: center; }
+        .q-box h4 { font-size: 15px; font-weight: 400; color: #1c1e54; }
         .auto-tag { display: inline-flex; align-items: center; font-size: 11px; font-weight: 500; color: var(--green); background: var(--green-bg); padding: 3px 10px; border-radius: var(--pill); margin-bottom: 14px; }
-        .user-info-bar { background: var(--primary-subdued); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; color: var(--primary-deep); font-weight: 500; margin-bottom: 14px; }
+        .user-info-bar { background: #eeedff; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; color: #1c1e54; font-weight: 500; margin-bottom: 14px; }
 
-        input[type="text"], input[type="number"], input[type="password"], textarea, select {
-            width: 100%; padding: 11px 14px; margin-bottom: 12px;
-            border: 1px solid var(--hairline-input); border-radius: var(--radius-sm);
-            font-family: inherit; font-size: 14px; font-weight: 400;
-            color: var(--ink); background: var(--canvas); outline: none;
-            transition: border-color 0.15s;
-        }
+        input[type="text"], input[type="number"], input[type="password"], textarea, select { width: 100%; padding: 11px 14px; margin-bottom: 12px; border: 1px solid var(--hairline-input); border-radius: var(--radius-sm); font-family: inherit; font-size: 14px; color: var(--ink); background: var(--canvas); outline: none; transition: border-color 0.15s; }
         input[type="number"] { -moz-appearance: textfield; }
-        input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
         input:focus, textarea:focus, select:focus { border-color: var(--primary); }
         select:disabled { opacity: 0.6; cursor: not-allowed; }
         textarea { resize: vertical; min-height: 80px; line-height: 1.6; }
-
-        .btn-main { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--primary); color: white; font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; transition: background 0.15s; }
+        .btn-main { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--primary); color: white; font-family: inherit; font-size: 14px; cursor: pointer; transition: background 0.15s; }
         .btn-main:hover { background: var(--primary-deep); }
 
-        /* ── 선생님 수정/삭제 버튼 ── */
+        /* Admin actions */
         .admin-card-actions { display: flex; gap: 6px; margin-top: 10px; }
-        .btn-admin-edit {
-            padding: 5px 12px; border-radius: var(--pill);
-            background: var(--canvas-soft); color: var(--ink-secondary);
-            border: 1px solid var(--hairline); font-family: inherit;
-            font-size: 12px; cursor: pointer; transition: all 0.15s;
-        }
+        .btn-admin-edit { padding: 5px 12px; border-radius: var(--pill); background: var(--canvas-soft); color: var(--ink-secondary); border: 1px solid var(--hairline); font-family: inherit; font-size: 12px; cursor: pointer; }
         .btn-admin-edit:hover { background: var(--hairline); }
-        .btn-admin-del {
-            padding: 5px 12px; border-radius: var(--pill);
-            background: var(--red-bg); color: var(--red);
-            border: none; font-family: inherit;
-            font-size: 12px; cursor: pointer; transition: all 0.15s;
-        }
+        .btn-admin-del { padding: 5px 12px; border-radius: var(--pill); background: var(--red-bg); color: var(--red); border: none; font-family: inherit; font-size: 12px; cursor: pointer; }
         .btn-admin-del:hover { background: #fbd5d1; }
         .today-item { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
         .today-item:last-child { border-bottom: none; }
         .today-item-content { display: flex; gap: 10px; }
         .today-item-content b { color: var(--ink); font-weight: 500; white-space: nowrap; }
         .today-item-content span { color: var(--ink-secondary); }
-
         .empty-msg { text-align: center; color: var(--ink-mute); padding: 28px 0; font-size: 14px; }
 
         /* Toast */
-        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120px); background: var(--ink); color: white; padding: 12px 22px; border-radius: var(--pill); font-size: 14px; font-weight: 400; z-index: 9999; transition: transform 0.25s cubic-bezier(.22,.68,0,1.2); white-space: nowrap; box-shadow: var(--shadow-2); }
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120px); background: var(--ink); color: white; padding: 12px 22px; border-radius: var(--pill); font-size: 14px; z-index: 9999; transition: transform 0.25s cubic-bezier(.22,.68,0,1.2); white-space: nowrap; box-shadow: var(--shadow-2); }
         .toast.show { transform: translateX(-50%) translateY(0); }
         .toast.error { background: #c0392b; }
         .toast.levelup { background: var(--primary); }
@@ -1298,36 +1256,17 @@
         .modal-box h2 { font-size: 20px; font-weight: 300; letter-spacing: -0.5px; color: var(--ink); margin-bottom: 6px; }
         .modal-sub { font-size: 13px; color: var(--ink-mute); margin-bottom: 22px; line-height: 1.7; }
         .modal-error { color: var(--red); font-size: 13px; margin-bottom: 12px; display: none; background: var(--red-bg); padding: 8px 14px; border-radius: var(--radius-sm); text-align: left; }
-        .btn-confirm { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--primary); color: white; font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; margin-bottom: 10px; transition: background 0.15s; }
+        .btn-confirm { width: 100%; padding: 13px; border: none; border-radius: var(--pill); background: var(--primary); color: white; font-family: inherit; font-size: 14px; cursor: pointer; margin-bottom: 10px; transition: background 0.15s; }
         .btn-confirm:hover { background: var(--primary-deep); }
-        .btn-modal-close { width: 100%; padding: 11px; border: 1px solid var(--hairline); border-radius: var(--pill); background: white; color: var(--ink-mute); font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; }
+        .btn-modal-close { width: 100%; padding: 11px; border: 1px solid var(--hairline); border-radius: var(--pill); background: white; color: var(--ink-mute); font-family: inherit; font-size: 13px; cursor: pointer; }
         .force-pw-notice { background: #fff7ed; border: 1px solid #fed7aa; border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; color: #92400e; margin-bottom: 16px; text-align: left; line-height: 1.6; }
-
-        /* Notice form modal */
-        .notice-form-box {
-            background: white; border-radius: 20px; padding: 32px 28px;
-            max-width: 480px; width: 94%; box-shadow: var(--shadow-2);
-            text-align: left; max-height: 90vh; overflow-y: auto;
-        }
-        .notice-form-box h2 { font-size: 18px; font-weight: 500; color: var(--ink); margin-bottom: 20px; letter-spacing: -0.3px; }
-
-        /* Photo modal */
-        .photo-modal-box {
-            background: rgba(0,0,0,0.9); border-radius: var(--radius-lg);
-            max-width: 90vw; max-height: 90vh;
-            display: flex; align-items: center; justify-content: center;
-            overflow: hidden; cursor: zoom-out; position: relative;
-        }
+        .notice-form-box { background: white; border-radius: 20px; padding: 32px 28px; max-width: 480px; width: 94%; box-shadow: var(--shadow-2); text-align: left; max-height: 90vh; overflow-y: auto; }
+        .notice-form-box h2 { font-size: 18px; font-weight: 500; color: var(--ink); margin-bottom: 20px; }
+        .photo-modal-box { background: rgba(0,0,0,0.9); border-radius: var(--radius-lg); max-width: 90vw; max-height: 90vh; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-out; position: relative; }
         .photo-modal-box img { max-width: 100%; max-height: 90vh; object-fit: contain; }
-        .photo-modal-close {
-            position: absolute; top: 12px; right: 12px;
-            background: rgba(255,255,255,0.2); color: white; border: none;
-            border-radius: var(--pill); padding: 6px 14px;
-            font-family: inherit; font-size: 13px; cursor: pointer;
-        }
+        .photo-modal-close { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: var(--pill); padding: 6px 14px; font-family: inherit; font-size: 13px; cursor: pointer; }
 
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-
         @media (max-width: 480px) {
             .rank-grid { grid-template-columns: repeat(3, 1fr); }
             .nav-btn { padding: 7px 12px; font-size: 12px; }
@@ -1338,7 +1277,7 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Login modal -->
+<!-- 로그인 모달 -->
 <div id="login-modal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-icon">🔐</div>
@@ -1348,7 +1287,6 @@
         <input type="text" id="login-num" placeholder="학번 (예: 30601)" inputmode="numeric" onkeydown="if(event.key==='Enter')document.getElementById('login-name').focus()">
         <input type="text" id="login-name" placeholder="이름" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()">
         <input type="password" id="login-pw" placeholder="비밀번호" onkeydown="if(event.key==='Enter')window.doLogin()">
-        <!-- [수정 1] 자동로그인 체크박스 -->
         <label class="auto-login-row">
             <input type="checkbox" id="login-auto-check">
             <span class="auto-login-label">자동 로그인 (이 기기에서 유지)</span>
@@ -1358,7 +1296,7 @@
     </div>
 </div>
 
-<!-- Force pw modal -->
+<!-- 최초 비밀번호 변경 모달 -->
 <div id="force-pw-modal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-icon">🔑</div>
@@ -1371,7 +1309,7 @@
     </div>
 </div>
 
-<!-- Change pw modal -->
+<!-- 비밀번호 변경 모달 -->
 <div id="pw-modal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-icon">🔑</div>
@@ -1385,7 +1323,7 @@
     </div>
 </div>
 
-<!-- [수정 3] 일정 상세 모달 -->
+<!-- 일정 상세 모달 -->
 <div id="cal-detail-modal" class="modal-overlay" onclick="if(event.target===this)window.closeCalModal()">
     <div class="cal-modal-box">
         <div id="cal-modal-date" class="cal-modal-date"></div>
@@ -1396,43 +1334,57 @@
     </div>
 </div>
 
-<!-- Notice form modal -->
+<!-- 홈 공지사항 폼 모달 -->
+<div id="home-notice-form-modal" class="modal-overlay" onclick="if(event.target===this)window.closeHomeNoticeForm()">
+    <div class="notice-form-modal-box">
+        <h2 id="home-notice-form-title">공지사항 등록</h2>
+        <textarea id="home-notice-textarea" rows="5" placeholder="공지사항 내용을 입력하세요..."></textarea>
+        <div style="display:flex;gap:10px;">
+            <button id="home-notice-submit-btn" class="btn-main" onclick="window.submitHomeNotice()" style="flex:2;">저장</button>
+            <button class="btn-main" onclick="window.closeHomeNoticeForm()" style="flex:1;background:var(--canvas);color:var(--ink-mute);border:1px solid var(--hairline);">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 섹션 선생님 공지 폼 모달 -->
+<div id="section-notice-form-modal" class="modal-overlay" onclick="if(event.target===this)window.closeSectionNoticeForm()">
+    <div class="notice-form-modal-box">
+        <h2 id="section-notice-form-title">선생님 공지 등록</h2>
+        <textarea id="section-notice-textarea" rows="5" placeholder="선생님 공지 내용을 입력하세요..."></textarea>
+        <div style="display:flex;gap:10px;">
+            <button id="section-notice-submit-btn" class="btn-main" onclick="window.submitSectionNotice()" style="flex:2;">저장</button>
+            <button class="btn-main" onclick="window.closeSectionNoticeForm()" style="flex:1;background:var(--canvas);color:var(--ink-mute);border:1px solid var(--hairline);">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 평가 안내 폼 모달 -->
 <div id="notice-form-modal" class="modal-overlay">
     <div class="notice-form-box">
         <h2 id="notice-form-title-text">새 평가 안내 등록</h2>
         <input type="text" id="notice-title-input" placeholder="제목 (예: 3단원 수행평가 안내)">
         <select id="notice-subject-select" style="margin-bottom:14px;">
-            <option value="국어">국어</option>
-            <option value="영어">영어</option>
-            <option value="수학">수학</option>
-            <option value="사회">사회</option>
-            <option value="역사">역사</option>
-            <option value="과학">과학</option>
-            <option value="정보">정보</option>
-            <option value="음악">음악</option>
-            <option value="미술">미술</option>
-            <option value="체육">체육</option>
-            <option value="정기시험">정기시험</option>
+            <option value="국어">국어</option><option value="영어">영어</option><option value="수학">수학</option>
+            <option value="사회">사회</option><option value="역사">역사</option><option value="과학">과학</option>
+            <option value="정보">정보</option><option value="음악">음악</option><option value="미술">미술</option>
+            <option value="체육">체육</option><option value="정기시험">정기시험</option>
         </select>
         <div class="notice-upload-area" onclick="document.getElementById('notice-img-input').click()">
-            <div id="notice-img-placeholder">
-                <span style="font-size:1.8rem;">📷</span>
-                <span>사진을 탭하여 첨부 (선택)</span>
-            </div>
+            <div id="notice-img-placeholder"><span style="font-size:1.8rem;">📷</span><span>사진을 탭하여 첨부 (선택)</span></div>
             <img id="notice-img-preview" src="" alt="미리보기">
         </div>
         <input type="file" id="notice-img-input" accept="image/*" style="display:none" onchange="window.previewNoticePhoto(this)">
-        <div style="display:flex;gap:10px;margin-top:4px;">
+        <div style="display:flex;gap:10px;">
             <button id="notice-submit-btn" class="btn-main" onclick="window.submitNotice()" style="flex:2;">저장</button>
             <button class="btn-main" onclick="window.closeNoticeForm()" style="flex:1;background:var(--canvas);color:var(--ink-mute);border:1px solid var(--hairline);">취소</button>
         </div>
     </div>
 </div>
 
-<!-- 선생님 수정 모달 -->
+<!-- 내용 수정 모달 (선생님) -->
 <div id="edit-modal" class="modal-overlay" onclick="if(event.target===this)window.closeEditModal()">
     <div class="modal-box" style="text-align:left;">
-        <h2 id="edit-modal-title" style="font-size:17px;font-weight:500;margin-bottom:16px;letter-spacing:-0.3px;"></h2>
+        <h2 id="edit-modal-title" style="font-size:17px;font-weight:500;margin-bottom:16px;"></h2>
         <textarea id="edit-modal-textarea" rows="5" style="width:100%;margin-bottom:12px;"></textarea>
         <div style="display:flex;gap:8px;">
             <button id="edit-modal-save" class="btn-confirm" style="flex:2;">저장</button>
@@ -1441,26 +1393,22 @@
     </div>
 </div>
 
-<!-- Photo modal -->
+<!-- 사진 확대 모달 -->
 <div id="photo-modal" class="modal-overlay" onclick="window.closePhotoModal()">
     <div class="photo-modal-box">
-        <img id="photo-modal-img" src="" alt="평가 안내 사진">
+        <img id="photo-modal-img" src="" alt="사진">
         <button class="photo-modal-close" onclick="window.closePhotoModal()">닫기</button>
     </div>
 </div>
 
-<!-- Hero -->
+<!-- ───── HERO ───── -->
 <div class="site-hero">
     <div class="top-bar">
         <span id="nav-user-label" class="user-pill"></span>
         <button class="btn-logout" id="nav-logout-btn" onclick="window.doLogout()">로그아웃</button>
         <button class="btn-pw" id="nav-pw-btn" onclick="window.openPwModal()">🔑 비밀번호 변경</button>
     </div>
-
-    <div class="site-title">
-        <h1>INTO THE <span>306</span> WORLD</h1>
-    </div>
-
+    <div class="site-title"><h1>INTO THE <span>306</span> WORLD</h1></div>
     <div class="nav-wrap">
         <nav>
             <button class="nav-btn active" onclick="window.showSection('home')" id="btn-home">🏠 홈</button>
@@ -1471,7 +1419,6 @@
             <button class="nav-btn locked" onclick="window.showSection('today')" id="btn-today">✏️ 오늘하루</button>
         </nav>
     </div>
-
     <div class="login-area-below" id="login-area-below">
         <button class="btn-login" id="nav-login-btn" onclick="window.openLoginModal()">🔐 로그인</button>
         <button class="btn-login btn-login-admin" onclick="location.href='admin.html'">🔧 관리자</button>
@@ -1487,7 +1434,7 @@
     <div class="progress-track"><div id="total-bar-fill" class="progress-fill"></div></div>
 </div>
 
-<!-- 홈 -->
+<!-- ───── 홈 ───── -->
 <section id="home" class="content-section active">
     <div class="card">
         <div class="card-pad">
@@ -1495,14 +1442,31 @@
                 <div class="dday-item"><div class="dday-num" id="d-day-start">0</div><div class="dday-label">함께한 날</div></div>
                 <div class="dday-item"><div class="dday-num" id="d-day-end">0</div><div class="dday-label">졸업까지</div></div>
             </div>
+            <!-- 공지사항 (캘린더 위) -->
+            <div class="home-notice-section">
+                <div class="home-notice-section-header">
+                    <p class="cal-section-label" style="margin-bottom:0;">📢 공지사항</p>
+                    <button class="btn-home-notice-write" id="home-notice-write-btn" onclick="window.openHomeNoticeWrite()">✏️ 공지 작성</button>
+                </div>
+                <div id="home-notice-list"></div>
+            </div>
+            <div style="height:1px;background:var(--hairline);margin-bottom:20px;"></div>
+            <!-- 캘린더 -->
             <p class="cal-section-label">📅 306 일정 (3주 이내)</p>
             <div id="cal-list"></div>
         </div>
     </div>
 </section>
 
-<!-- 마일리지 -->
+<!-- ───── 마일리지 ───── -->
 <section id="mileage" class="content-section">
+    <div class="section-notice-wrap" id="mileage-notice-area">
+        <div class="section-notice-top-row">
+            <span class="section-notice-top-label">📌 선생님 공지</span>
+            <button class="btn-snotice-write" id="mileage-notice-write-btn" onclick="window.openSectionNoticeWrite('mileage')">✏️ 공지 작성</button>
+        </div>
+        <div id="mileage-section-notice-list"></div>
+    </div>
     <div class="card">
         <div class="sub-nav">
             <button class="active" onclick="window.showSubTab(this,'mileage','m-guide')">적립 및 보상</button>
@@ -1524,7 +1488,7 @@
     </div>
 </section>
 
-<!-- 스터디 체크 -->
+<!-- ───── 스터디 체크 ───── -->
 <section id="study" class="content-section">
     <div id="study-locked" class="card" style="display:block;">
         <div class="card-pad lock-notice">
@@ -1535,6 +1499,13 @@
         </div>
     </div>
     <div id="study-content" style="display:none;">
+        <div class="section-notice-wrap" id="study-notice-area">
+            <div class="section-notice-top-row">
+                <span class="section-notice-top-label">📌 선생님 공지</span>
+                <button class="btn-snotice-write" id="study-notice-write-btn" onclick="window.openSectionNoticeWrite('study')">✏️ 공지 작성</button>
+            </div>
+            <div id="study-section-notice-list"></div>
+        </div>
         <div class="card">
             <div class="sub-nav">
                 <button class="active" onclick="window.showSubTab(this,'study-inner','s-upload')">체크하기</button>
@@ -1581,8 +1552,15 @@
     </div>
 </section>
 
-<!-- 평가 안내 -->
+<!-- ───── 평가 안내 ───── -->
 <section id="notice" class="content-section">
+    <div class="section-notice-wrap" id="notice-notice-area">
+        <div class="section-notice-top-row">
+            <span class="section-notice-top-label">📌 선생님 공지</span>
+            <button class="btn-snotice-write" id="notice-section-notice-write-btn" onclick="window.openSectionNoticeWrite('notice')">✏️ 공지 작성</button>
+        </div>
+        <div id="notice-section-notice-list"></div>
+    </div>
     <div class="card">
         <div class="card-pad">
             <div class="notice-header-row">
@@ -1607,7 +1585,7 @@
     </div>
 </section>
 
-<!-- 칭찬감옥 -->
+<!-- ───── 칭찬감옥 ───── -->
 <section id="praise" class="content-section">
     <div id="praise-locked" class="card" style="display:block;">
         <div class="card-pad lock-notice">
@@ -1618,6 +1596,13 @@
         </div>
     </div>
     <div id="praise-content" style="display:none;">
+        <div class="section-notice-wrap" id="praise-notice-area">
+            <div class="section-notice-top-row">
+                <span class="section-notice-top-label">📌 선생님 공지</span>
+                <button class="btn-snotice-write" id="praise-notice-write-btn" onclick="window.openSectionNoticeWrite('praise')">✏️ 공지 작성</button>
+            </div>
+            <div id="praise-section-notice-list"></div>
+        </div>
         <div class="card">
             <div class="sub-nav">
                 <button class="active" onclick="window.showSubTab(this,'praise-inner','p-form')">제보하기</button>
@@ -1628,6 +1613,7 @@
                     <div class="card-pad">
                         <p class="card-title">🌟 친구 칭찬 제보</p>
                         <div class="user-info-bar">👤 제보자: <span id="p-from-display"></span></div>
+                        <div class="praise-limit-notice">💡 같은 친구는 한 달에 한 번만 칭찬할 수 있어요!</div>
                         <input type="hidden" id="p-from">
                         <select id="p-to"><option value="">칭찬 주인공 선택</option></select>
                         <input type="date" id="p-date" style="margin-bottom:10px;">
@@ -1652,7 +1638,7 @@
     </div>
 </section>
 
-<!-- 오늘하루 -->
+<!-- ───── 오늘하루 ───── -->
 <section id="today" class="content-section">
     <div id="today-locked" class="card" style="display:block;">
         <div class="card-pad lock-notice">
@@ -1663,6 +1649,13 @@
         </div>
     </div>
     <div id="today-content" style="display:none;">
+        <div class="section-notice-wrap" id="today-notice-area">
+            <div class="section-notice-top-row">
+                <span class="section-notice-top-label">📌 선생님 공지</span>
+                <button class="btn-snotice-write" id="today-notice-write-btn" onclick="window.openSectionNoticeWrite('today')">✏️ 공지 작성</button>
+            </div>
+            <div id="today-section-notice-list"></div>
+        </div>
         <div class="card">
             <div class="sub-nav">
                 <button class="active" onclick="window.showSubTab(this,'today-inner','t-form')">오늘의 질문</button>
