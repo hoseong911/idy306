@@ -111,7 +111,7 @@
                 if (loginBtn) loginBtn.style.display = 'none';
                 if (logoutBtn) logoutBtn.style.display = 'inline-flex';
                 if (loginArea) loginArea.style.display = 'none';
-                if (userLabel) { userLabel.innerText = `${currentUser.num}번 ${currentUser.name}`; userLabel.style.display='inline-flex'; }
+                if (userLabel) { userLabel.innerText = currentUser.isTest ? currentUser.name : `${currentUser.num}번 ${currentUser.name}`; userLabel.style.display='inline-flex'; }
                 if (pwBtn) pwBtn.style.display = 'inline-flex';
                 PROTECTED.forEach(id => {
                     const btn = document.getElementById('btn-' + id);
@@ -644,7 +644,7 @@
             const praiseCard = (id, p) => {
                 const adminBtns = (currentUser && currentUser.isTest)
                     ? `<div class="admin-card-actions"><button class="btn-admin-edit" onclick="window.openPraiseEdit('${id}')">수정</button><button class="btn-admin-del" onclick="window.deletePraiseItem('${id}')">삭제</button></div>` : '';
-                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b>${(()=>{const c=p.to[p.to.length-1];const code=(c.charCodeAt(0)-0xAC00)%28;return code===0?'를':'을';})()}칭찬해요♥</div>${p.date?`<div class="praise-date-badge">${p.date}</div>`:''}${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
+                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b>${(()=>{const c=p.to[p.to.length-1];const code=(c.charCodeAt(0)-0xAC00)%28;return code===0?'를':'을';})()}칭찬해요❤️</div>${p.date?`<div class="praise-date-badge">${p.date}</div>`:''}${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
             };
             if(sortBy==='date') {
                 approved.forEach(([id,p])=>{const d=p.time?p.time.split(' ')[0]:'날짜 미상';if(!grouped[d])grouped[d]=[];grouped[d].push({id,...p});});
@@ -1212,7 +1212,7 @@
 
         /* Common */
         .list-group-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.7px; color: var(--ink-mute); padding: 12px 0 8px; border-bottom: 1px solid var(--hairline); margin-bottom: 8px; }
-        .sort-bar { display: flex; gap: 6px; margin-bottom: 16px; }
+        .sort-bar { display: flex; gap: 6px; margin-bottom: 16px; justify-content: center; }
         .sort-btn { padding: 6px 14px; border: 1px solid var(--hairline); border-radius: var(--pill); background: var(--canvas); font-family: inherit; font-size: 12px; color: var(--ink-mute); cursor: pointer; transition: all 0.15s; }
         .sort-btn.active { background: var(--ink); color: white; border-color: var(--ink); }
         .q-box { background: #eeedff; border-radius: var(--radius-md); padding: 18px; margin-bottom: 18px; text-align: center; }
@@ -1616,7 +1616,7 @@
                         <div class="praise-limit-notice">💡 같은 친구는 한 달에 한 번만 칭찬할 수 있어요!</div>
                         <input type="hidden" id="p-from">
                         <select id="p-to"><option value="">칭찬 주인공 선택</option></select>
-                        <input type="date" id="p-date" style="margin-bottom:10px;">
+                        <input type="date" id="p-date">
                         <input type="text" id="p-when" placeholder="📅 언제? (예: 오늘 점심시간, 어제 쉬는 시간)">
                         <input type="text" id="p-where" placeholder="📍 어디서? (예: 급식실, 복도, 교실)">
                         <textarea id="p-content" rows="3" placeholder="✏️ 무엇을 했나요? 칭찬 내용을 자세히 적어주세요! (공백 제외 30자 이상)" oninput="window.onPContentInput()"></textarea>
