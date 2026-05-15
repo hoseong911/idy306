@@ -126,9 +126,10 @@
                 const certDisplay = document.getElementById('cert-name-display');
                 const pfDisplay = document.getElementById('p-from-display');
                 const tDisplay = document.getElementById('t-name-display');
-                if (certDisplay) certDisplay.innerText = `${currentUser.num}번 ${currentUser.name}`;
-                if (pfDisplay) pfDisplay.innerText = `${currentUser.num}번 ${currentUser.name}`;
-                if (tDisplay) tDisplay.innerText = `${currentUser.num}번 ${currentUser.name}`;
+                const displayName = currentUser.isTest ? currentUser.name : `${currentUser.num}번 ${currentUser.name}`;
+                if (certDisplay) certDisplay.innerText = displayName;
+                if (pfDisplay) pfDisplay.innerText = displayName;
+                if (tDisplay) tDisplay.innerText = displayName;
                 const certName = document.getElementById('cert-name');
                 const pFrom = document.getElementById('p-from');
                 const tName = document.getElementById('t-name');
@@ -644,7 +645,7 @@
             const praiseCard = (id, p) => {
                 const adminBtns = (currentUser && currentUser.isTest)
                     ? `<div class="admin-card-actions"><button class="btn-admin-edit" onclick="window.openPraiseEdit('${id}')">수정</button><button class="btn-admin-del" onclick="window.deletePraiseItem('${id}')">삭제</button></div>` : '';
-                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b>${(()=>{const c=p.to[p.to.length-1];const code=(c.charCodeAt(0)-0xAC00)%28;return code===0?'를':'을';})()}칭찬해요❤️</div>${p.date?`<div class="praise-date-badge">${p.date}</div>`:''}${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
+                return `<div class="praise-card"><div class="praise-header"><b>${p.to}</b>을(를) 칭찬해요❤️</div>${p.date?`<div class="praise-date-badge">${p.date}</div>`:''}${p.when?`<div class="praise-meta">📅 ${p.when} &nbsp;|&nbsp; 📍 ${p.where||'-'}</div>`:''}<p class="praise-body">${p.content}</p><small class="praise-from">- ${p.from}</small>${adminBtns}</div>`;
             };
             if(sortBy==='date') {
                 approved.forEach(([id,p])=>{const d=p.time?p.time.split(' ')[0]:'날짜 미상';if(!grouped[d])grouped[d]=[];grouped[d].push({id,...p});});
@@ -1220,7 +1221,7 @@
         .auto-tag { display: inline-flex; align-items: center; font-size: 11px; font-weight: 500; color: var(--green); background: var(--green-bg); padding: 3px 10px; border-radius: var(--pill); margin-bottom: 14px; }
         .user-info-bar { background: #eeedff; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; color: #1c1e54; font-weight: 500; margin-bottom: 14px; }
 
-        input[type="text"], input[type="number"], input[type="password"], textarea, select { width: 100%; padding: 11px 14px; margin-bottom: 12px; border: 1px solid var(--hairline-input); border-radius: var(--radius-sm); font-family: inherit; font-size: 14px; color: var(--ink); background: var(--canvas); outline: none; transition: border-color 0.15s; }
+        input[type="text"], input[type="number"], input[type="password"], input[type="date"], textarea, select { width: 100%; padding: 11px 14px; margin-bottom: 12px; border: 1px solid var(--hairline-input); border-radius: var(--radius-sm); font-family: inherit; font-size: 14px; color: var(--ink); background: var(--canvas); outline: none; transition: border-color 0.15s; }
         input[type="number"] { -moz-appearance: textfield; }
         input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
         input:focus, textarea:focus, select:focus { border-color: var(--primary); }
